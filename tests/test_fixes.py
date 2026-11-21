@@ -352,3 +352,17 @@ def test_suppression_handles_missing_values(con):
     suppress(con, None, "bounced")  # a lead without an email
     assert not is_suppressed(con, None) and not is_suppressed(con, None, "")
     assert con.execute("select count(*) from suppression").fetchone()[0] == 0
+
+
+# ---- 6. Security ---------------------------------------------------------------------------
+
+def test_names_never_land_inside_inline_javascript(web):
+    client, con = web
+    evil = "Raju's Café');alert(1);//"
+    _lead(con, status="drafted")
+    con.execute("update businesses set name = ?, area = ?", (evil, evil))
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'S', 'B', 'template', 0, 'x', 'x')")
+    con.commit()
+    for page in (client.get("/leads/b1").text, client.get("/pitches", params={"area": evil}).text):
+        assert "return confirm(" not in page and "data-confirm=" in page
+        assert "');alert(1)" not in page  # only the escaped form appears

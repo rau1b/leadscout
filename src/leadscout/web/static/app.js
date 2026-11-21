@@ -1,3 +1,10 @@
+// Forms with data-confirm ask first. The text lives in an attribute, never inside inline JavaScript,
+// so a business name with an apostrophe (or worse) can't break out of it.
+document.addEventListener("submit", function (e) {
+  var text = e.target.getAttribute && e.target.getAttribute("data-confirm");
+  if (text && !window.confirm(text)) e.preventDefault();
+});
+
 // "Back" from a lead returns to the exact list you came from: same filters, same scroll position.
 (function () {
   var LISTS = { "/": "Today", "/leads": "Leads", "/pitches": "Pitches", "/replies": "Replies", "/deals": "Deals", "/sent": "Sent", "/find": "Find leads" };

@@ -135,7 +135,7 @@
         <p class="hint">New chats today: {{ wa_today }} of {{ wa_cap }}. Manual only, from a separate number, one message each.</p>
         {% elif r.phone %}<p class="hint">Landline number: no WhatsApp link. Call only after they reply.</p>{% endif %}
         {% if r.status != 'opted_out' %}
-        <form method="post" action="/leads/{{ r.id }}/optout" onsubmit="return confirm('Never contact {{ r.name|e }} again?')">
+        <form method="post" action="/leads/{{ r.id }}/optout" data-confirm="Never contact {{ r.name }} again?">
           <button class="btn danger small">Opt out for good</button>
         </form>
         {% endif %}
