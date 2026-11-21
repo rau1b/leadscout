@@ -667,3 +667,23 @@ def test_refound_business_moves_to_the_new_area(con):
     assert tuple(con.execute("select area, city from businesses").fetchone()) == ("Aundh, Pune", "Pune")
     upsert_business(con, {**b, "area": None})  # e.g. a CSV row without an area keeps the old one
     assert con.execute("select area from businesses").fetchone()[0] == "Aundh, Pune"
+
+
+# ---- Minor: unhide rescores only that lead -------------------------------------------------
+
+def test_unhide_rescores_only_that_lead(web, monkeypatch):
+    from leadscout import emailcheck
+
+    client, con = web
+    _lead(con, "b1", status="hidden")
+    _lead(con, "b2", status="new")
+    con.execute("""update businesses set emails = '["a@one.in"]' where id = 'b1'""")
+    con.execute("""update businesses set emails = '["b@two.in"]', phone = '+919848022338' where id = 'b2'""")
+    con.commit()
+    checked = []
+    monkeypatch.setattr(emailcheck, "domain_accepts_mail", lambda d: checked.append(d) or True)
+    assert client.post("/leads/b1/unhide", headers=LOCAL, follow_redirects=False).status_code == 303
+    assert set(checked) == {"one.in"}
+    rows = dict(con.execute("select business_id, updated_at from leads").fetchall())
+    assert rows["b2"] == "2026-11-20" and rows["b1"] != "2026-11-20"
+    assert _status(con, "b1") in ("new", "excluded")

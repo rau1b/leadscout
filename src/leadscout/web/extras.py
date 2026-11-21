@@ -220,5 +220,5 @@ def unhide(lead_id: str):
     con = db.connect()
     con.execute("update leads set status = 'new', updated_at = ? where business_id = ? and status = 'hidden'", (now(), lead_id))
     con.commit()
-    score_all(con, config.load())  # back to new or excluded, on its merits
+    score_all(con, config.load(), only=lead_id)  # back to new or excluded, on its merits
     return RedirectResponse(f"/leads/{lead_id}", status_code=303)

@@ -120,21 +120,28 @@ def chain_domains(con, min_count: int = 3) -> set[str]:
     return {d for d, n in counts.items() if n >= min_count}
 
 
-def score_all(con, cfg) -> dict:
+def score_all(con, cfg, only: str | None = None) -> dict:
+    """Score every lead, or with `only`, just that business (duplicate checks still see every listing)."""
     sc = cfg.scoring
     chains = chain_domains(con)
     rows = con.execute(
         """select b.*, a.site_class, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year,
-                  a.has_whatsapp, a.has_tel, a.found_emails, a.fetch_error, l.status as lead_status, l.email as lead_email
+                  a.has_whatsapp, a.has_tel, a.found_emails, a.fetch_error, l.status as lead_status, l.email as lead_email, l.score as lead_score
            from businesses b join audits a on a.business_id = b.id
            left join leads l on l.business_id = b.id"""
     ).fetchall()
     # Check every email domain in parallel up front (cached), instead of one slow DNS lookup at a time.
-    domains = {e.rsplit("@", 1)[1].lower() for r in rows for e in jload(r["emails"]) + jload(r["found_emails"]) if "@" in e}
+    domains = {e.rsplit("@", 1)[1].lower() for r in rows if not only or r["id"] == only
+               for e in jload(r["emails"]) + jload(r["found_emails"]) if "@" in e}
     with ThreadPoolExecutor(max_workers=32) as pool:
         list(pool.map(emailcheck.domain_accepts_mail, domains))
     leads = []
     for r in rows:
+        if only and r["id"] != only:
+            # Not rescored, but still in the running for "which copy of a duplicate to keep", with its stored values.
+            leads.append({"r": r, "email": r["lead_email"], "excluded": "kept" if r["lead_status"] == "excluded" else None,
+                          "score": r["lead_score"] or 0, "reasons": [], "site": domain(r["website"]), "write": False})
+            continue
         cat = f"{r['category'] or ''} {r['category_path'] or ''}".lower()
         site_domain = domain(r["website"])
         candidates = jload(r["emails"]) + jload(r["found_emails"])
@@ -165,7 +172,7 @@ def score_all(con, cfg) -> dict:
         if r["phone_type"] == "mobile":
             value += 5
         leads.append({"r": r, "email": email, "excluded": excluded, "score": min(100, need + value), "reasons": reasons,
-                      "site": site_domain})
+                      "site": site_domain, "write": True})
 
     # One place, one lead. Keep the copy you've already worked on, else the best lead; the rest are duplicates.
     leads.sort(key=lambda x: (-STATUS_RANK.get(x["r"]["lead_status"], 0), x["excluded"] is not None, -x["score"],
@@ -175,6 +182,8 @@ def score_all(con, cfg) -> dict:
     for x in leads:
         r = x["r"]
         is_dup = finder.seen_before(r, x["site"])
+        if not x["write"]:
+            continue
         excluded = "Duplicate listing" if is_dup else x["excluded"]
         score, reasons = (0, [excluded]) if excluded else (x["score"], x["reasons"])
 
