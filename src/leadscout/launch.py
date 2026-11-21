@@ -65,15 +65,37 @@ def main() -> None:
     webbrowser.open(URL)
 
 
+def _command_line(pid: int) -> str:
+    """The process's command line, or "" if it doesn't exist (or can't be read)."""
+    if os.name == "nt":
+        query = f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", query], capture_output=True, text=True)
+        return out.stdout.strip()
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def _kill(pid: int) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    else:
+        os.kill(pid, 15)
+
+
 def stop() -> bool:
+    """Stop the dashboard we started. After a reboot the saved PID may belong to another program: leave that alone."""
     if not PID_FILE.exists():
         return False
-    pid = PID_FILE.read_text().strip()
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], capture_output=True)
-    else:
-        os.kill(int(pid), 15)
+    text = PID_FILE.read_text().strip()
     PID_FILE.unlink(missing_ok=True)
+    if not text.isdigit():
+        return False
+    pid = int(text)
+    if "leadscout.web.app" not in _command_line(pid):
+        return False  # stale pid file
+    _kill(pid)
     return True
 
 

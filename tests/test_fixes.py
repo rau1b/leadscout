@@ -554,3 +554,33 @@ def test_broken_certificate_reason_and_pitch(cfg):
     assert pts > 0 and any("security warning" in w for w in why) and not any("No HTTPS" in w for w in why)
     body = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)["body"]
     assert "browsers show a security warning" in body and "Not secure" not in body
+
+
+# ---- 11. stop() only kills our own dashboard -----------------------------------------------
+
+@pytest.mark.parametrize("cmdline,killed", [
+    ('"C:\leadscout\.venv\Scripts\pythonw.exe" -m uvicorn leadscout.web.app:app --host 127.0.0.1 --port 8000', True),
+    ("C:\Program Files\Mozilla Firefox\firefox.exe", False),  # PID reused after a reboot
+    ("", False),  # no such process any more
+])
+def test_stop_only_kills_our_dashboard(tmp_path, monkeypatch, cmdline, killed):
+    from leadscout import launch
+
+    pid_file = tmp_path / "dashboard.pid"
+    pid_file.write_text("4242")
+    monkeypatch.setattr(launch, "PID_FILE", pid_file)
+    monkeypatch.setattr(launch, "_command_line", lambda pid: cmdline)
+    kills = []
+    monkeypatch.setattr(launch, "_kill", lambda pid: kills.append(pid))
+    assert launch.stop() is killed
+    assert kills == ([4242] if killed else []) and not pid_file.exists()
+
+
+def test_stop_ignores_a_garbled_pid_file(tmp_path, monkeypatch):
+    from leadscout import launch
+
+    pid_file = tmp_path / "dashboard.pid"
+    pid_file.write_text("4242 & calc")
+    monkeypatch.setattr(launch, "PID_FILE", pid_file)
+    monkeypatch.setattr(launch, "_kill", lambda pid: pytest.fail("must not kill"))
+    assert launch.stop() is False and not pid_file.exists()
