@@ -53,8 +53,8 @@ Last checked: 21 Nov 2026.
 ### DPDP Act 2023 and DPDP Rules 2025
 
 - The Rules were notified in **November 2025** and are phased in. Most obligations on data fiduciaries (notice, consent, security, retention, breach reporting) apply about **18 months later, around 13 May 2027**.
-- Section 3(c)(ii) of the Act excludes personal data that the person **made public themselves**. Contact details a business owner published on their own Google listing likely fall under it. Don't lean on that alone, and design as if the Act applies:
-  - Collect the minimum: business name, public phone, public email, website, rating. No personal social profiles, no home addresses.
+- Section 3(c)(ii) of the Act excludes personal data that the person **made public themselves**. Contact details a business owner published on their own website or public listing likely fall under it. Don't lean on that alone, and design as if the Act applies:
+  - Collect the minimum: business name, category, address, public phone, public email, website. No personal social profiles, no home addresses.
   - Store locally only. Never sell, share or upload lead lists.
   - **Opt-outs are permanent and immediate.** One reply of "no", "stop" or "not interested" puts the number/email on the suppression list.
   - Delete on request: `leadscout forget <phone|email>` removes all their data and keeps only a hashed suppression entry.
@@ -65,12 +65,11 @@ Last checked: 21 Nov 2026.
 - Businesses come from **Overture Maps** open data and from CSV files you collect yourself. LeadScout doesn't use the Google Places API and never scrapes Google Maps.
 - Check Overture's licence and attribution terms before you publish or share anything built from its data.
 
-## Pitch content rules (in the AI system prompt)
+## Pitch content rules (built-in templates and the `/pitch-today` command)
 
 - Cite only numbers we measured (load time, score, missing HTTPS). Nothing made up, nothing exaggerated.
 - No fake urgency ("offer ends today"), no fear claims ("Google will delist you"), no pretending to be Google or a customer.
 - Be clear about who you are and that you're offering a paid service.
-- Open with something genuinely positive when it's true (e.g. "4.7★ from 230 reviews").
 - Use a low-pressure call to action: a free mockup or a free audit report.
 - Always include an opt-out line.
 
@@ -81,3 +80,4 @@ Last checked: 21 Nov 2026.
 - TRAI 140-series for promotional calls (2026): [TRAI PR 91/2026](https://trai.gov.in/sites/default/files/2026-07/PR_No91of2026.pdf), [TRAI PR 119/2026](https://www.trai.gov.in/sites/default/files/2026-09/PR_No119of2026.pdf)
 - WhatsApp opt-in requirement: [Meta: Get opt-in for WhatsApp](https://developers.facebook.com/documentation/business-messaging/whatsapp/getting-opt-in)
 - WhatsApp India pricing: [Meta pricing](https://developers.facebook.com/docs/whatsapp/pricing), [MyOperator 2026](https://myoperator.com/blog/whatsapp-business-api-pricing-india-2026)
+- Overture Maps data and licences: [Overture docs](https://docs.overturemaps.org/)
