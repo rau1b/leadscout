@@ -72,15 +72,18 @@ class Gmail:
         if not _token_path().exists():
             raise RuntimeError("Not logged in to Gmail. Run `leadscout gmail-login` first.")
         creds = Credentials.from_authorized_user_file(str(_token_path()), SCOPES)
-        if not creds.valid and creds.refresh_token:
+        if not creds.valid:
+            # Google expires logins for OAuth apps left in "Testing" mode after 7 days.
+            relogin = (
+                "Your Gmail login has expired. Run `leadscout gmail-login` again. (Google expires logins after "
+                "7 days while the OAuth app is in Testing mode; set it to In production to stop this.)"
+            )
+            if not creds.refresh_token:
+                raise RuntimeError(relogin)
             try:
                 creds.refresh(Request())
             except RefreshError as e:
-                # Google expires logins for OAuth apps left in "Testing" mode after 7 days.
-                raise RuntimeError(
-                    "Your Gmail login has expired. Run `leadscout gmail-login` again. (Google expires logins after "
-                    "7 days while the OAuth app is in Testing mode; set it to In production to stop this.)"
-                ) from e
+                raise RuntimeError(relogin) from e
             _token_path().write_text(creds.to_json(), encoding="utf-8")
         self.s = AuthorizedSession(creds)
 

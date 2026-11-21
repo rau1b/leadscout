@@ -411,3 +411,32 @@ def test_hide_only_redirects_within_the_dashboard(web, back, goes_to):
     _lead(con, status="new")
     r = client.post("/leads/b1/hide", data={"back": back}, headers=LOCAL, follow_redirects=False)
     assert r.headers["location"] == goes_to
+
+
+# ---- 7. Expired Gmail login ----------------------------------------------------------------
+
+class FakeCreds:
+    def __init__(self, refresh_token="r", fails=False):
+        self.valid, self.refresh_token, self.fails = False, refresh_token, fails
+
+    def refresh(self, request):
+        from google.auth.exceptions import RefreshError
+
+        if self.fails:
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+        self.valid = True
+
+    def to_json(self):
+        return "{}"
+
+
+@pytest.mark.parametrize("creds", [FakeCreds(fails=True), FakeCreds(refresh_token=None)])
+def test_expired_gmail_login_says_log_in_again(tmp_path, monkeypatch, creds):
+    from leadscout.mailer import gmail
+
+    token = tmp_path / "gmail_token.json"
+    token.write_text("{}")
+    monkeypatch.setattr(gmail, "_token_path", lambda: token)
+    monkeypatch.setattr(gmail.Credentials, "from_authorized_user_file", lambda *a: creds)
+    with pytest.raises(RuntimeError, match="gmail-login"):
+        gmail.Gmail()

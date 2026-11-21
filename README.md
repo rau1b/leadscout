@@ -22,6 +22,8 @@ Gmail sending, free, no card:
 3. Credentials > Create OAuth client ID > Desktop app > download the JSON to `data\gmail_credentials.json`.
 4. `.venv\Scripts\leadscout gmail-login`
 
+While your OAuth app's publishing status is **Testing**, Google expires the login after **7 days**. When LeadScout says the Gmail login has expired, run `.venv\Scripts\leadscout gmail-login` again. (Publishing the app to "In production" avoids this, but Google may ask you to verify it first.)
+
 ## Daily routine
 
 Double-click **LeadScout** on your desktop. It opens the dashboard in your browser (http://127.0.0.1:8000).

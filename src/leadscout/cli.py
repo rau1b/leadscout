@@ -139,6 +139,17 @@ def gmail_login():
     typer.echo(f"Logged in as {gmail.login()}.")
 
 
+def _gmail():
+    """Gmail client, or a plain message (not a traceback) when the login is missing or expired."""
+    from leadscout.mailer.gmail import Gmail
+
+    try:
+        return Gmail()
+    except RuntimeError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+
+
 @app.command()
 def send(dry_run: bool = typer.Option(False, help="Show what would be sent without sending."), once: bool = typer.Option(False, help="Send one email and stop.")):
     """Send approved pitches through Gmail, respecting warm-up caps and the IST sending window."""
@@ -147,9 +158,7 @@ def send(dry_run: bool = typer.Option(False, help="Show what would be sent witho
     cfg, con = _ctx()
     gm = None
     if not dry_run:
-        from leadscout.mailer.gmail import Gmail
-
-        gm = Gmail()
+        gm = _gmail()
     sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo)
 
 
@@ -157,10 +166,9 @@ def send(dry_run: bool = typer.Option(False, help="Show what would be sent witho
 def check_replies():
     """Check Gmail for replies, opt-outs and bounces."""
     from leadscout.mailer import sender
-    from leadscout.mailer.gmail import Gmail
 
     cfg, con = _ctx()
-    typer.echo(sender.check_replies(con, cfg, Gmail()))
+    typer.echo(sender.check_replies(con, cfg, _gmail()))
 
 
 @app.command()
