@@ -128,3 +128,41 @@ def test_won_lead_is_never_auto_opted_out(con, cfg):
     sender.check_replies(con, cfg, InboxOnly("opted_out"))
     assert _status(con) == "won" and not is_suppressed(con, "owner@clinic.in")
     assert con.execute("select count(*) from replies").fetchone()[0] == 1  # still saved for you to read
+
+
+# ---- 3. Delay notices are not bounces ------------------------------------------------------
+
+class FakeResp:
+    def __init__(self, data):
+        self.status_code, self._data = 200, data
+
+    def json(self):
+        return self._data
+
+
+def _gmail_with(messages):
+    from leadscout.mailer.gmail import Gmail
+
+    g = Gmail.__new__(Gmail)  # skip the OAuth login
+    thread = {"messages": [{"id": f"m{i}", "internalDate": "1795000000000", "snippet": body,
+                            "payload": {"headers": [{"name": "From", "value": frm}, {"name": "Subject", "value": subj}]}}
+                           for i, (frm, subj, body) in enumerate(messages)]}
+    g.s = type("S", (), {"get": lambda self, *a, **k: FakeResp(thread)})()
+    return g
+
+
+DAEMON = "Mail Delivery Subsystem <mailer-daemon@googlemail.com>"
+
+
+@pytest.mark.parametrize("frm,subject,expected", [
+    (DAEMON, "Delivery Status Notification (Failure)", "bounced"),
+    (DAEMON, "Undeliverable: Smile Dental", "bounced"),
+    ("postmaster@clinic.in", "Mail delivery failed: returning message to sender", "bounced"),
+    (DAEMON, "Delivery Status Notification (Delay)", None),
+    (DAEMON, "Warning: message delayed", None),
+    ("owner@clinic.in", "Re: Smile Dental", "replied"),
+])
+def test_only_real_failures_are_bounces(frm, subject, expected):
+    g = _gmail_with([(frm, subject, "Hello, how much?")])
+    kinds = [m["kind"] for m in g.incoming("t1", "me@gmail.com")]
+    assert kinds == ([expected] if expected else [])

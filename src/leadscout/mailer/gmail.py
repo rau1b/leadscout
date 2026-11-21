@@ -37,6 +37,16 @@ NO_WORDS = re.compile(
 )
 
 
+DELAY = re.compile(r"\bdelay(ed)?\b|will (retry|keep trying)|not yet (been )?delivered", re.I)
+
+
+def delivery_notice(sender: str, subject: str) -> str | None:
+    """'bounced' for a real delivery failure, 'delay' for a still-retrying notice, else None (a person wrote it)."""
+    daemon = "mailer-daemon" in sender or "postmaster" in sender
+    if not (daemon or "delivery status" in subject.lower() or "undeliver" in subject.lower()):
+        return None
+    return "delay" if DELAY.search(subject) else "bounced"
+
 
 def is_opt_out(text: str) -> bool:
     """True when a reply reads as a "no" or a request to stop (see NO_WORDS)."""
@@ -144,7 +154,10 @@ class Gmail:
             sender = parseaddr(headers.get("from", ""))[1].lower()
             if sender == my_address.lower():
                 continue
-            bounced = "mailer-daemon" in sender or "postmaster" in sender or "delivery status" in headers.get("subject", "").lower()
+            notice = delivery_notice(sender, headers.get("subject", ""))
+            if notice == "delay":
+                continue  # the server is still retrying; not a bounce and not a reply
+            bounced = notice == "bounced"
             body = strip_quoted(plain_text(payload) or m.get("snippet", ""))
             out.append({
                 "id": m["id"],
