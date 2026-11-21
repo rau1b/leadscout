@@ -416,6 +416,7 @@ def test_import_sets_aside_unmeasured_numbers(home, cfg):
 
     _seed_lead(home, "b2")
     home.execute("update audits set site_class = 'real', lcp_s = 7.8, perf_score = 31 where business_id = 'b2'")
+    home.execute("update leads set status = 'new'")  # only leads still waiting for a pitch take an imported one
     home.commit()
     jobs.results_path().write_text(json.dumps([
         {"id": "b2", "subject": "Your site takes 7.8s on mobile", "body": "It scores 31/100. Call +91 90000 00000.", "whatsapp": "7.8s"},
