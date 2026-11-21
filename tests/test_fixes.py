@@ -654,3 +654,16 @@ def test_professional_search_skips_taxis(row, hit):
 
     terms = BUSINESS_TYPES["professional"][1].split(",")
     assert matches(row, terms) is hit
+
+
+# ---- Minor: re-found businesses join the new search's area ---------------------------------
+
+def test_refound_business_moves_to_the_new_area(con):
+    from leadscout.sources.common import upsert_business
+
+    b = {"id": "x", "source": "overture", "name": "Smile Dental", "area": "Baner, Pune"}
+    upsert_business(con, b)
+    upsert_business(con, {**b, "area": "Aundh, Pune"})
+    assert tuple(con.execute("select area, city from businesses").fetchone()) == ("Aundh, Pune", "Pune")
+    upsert_business(con, {**b, "area": None})  # e.g. a CSV row without an area keeps the old one
+    assert con.execute("select area from businesses").fetchone()[0] == "Aundh, Pune"
