@@ -93,6 +93,8 @@ async def _get(client: httpx.AsyncClient, url: str) -> tuple[httpx.Response | No
     """Fetch, telling a dead domain apart from a slow server or a certificate quirk. Returns (response, text, error)."""
     try:
         return *(await fetch(client, url)), None
+    except httpx.InvalidURL:
+        return None, "", "invalid_url"  # e.g. "http://site.com:80a" in the listing; not an HTTPError subclass
     except httpx.ConnectError as e:
         msg = str(e).lower()
         if "getaddrinfo" in msg or "name or service not known" in msg or "nodename nor servname" in msg:
@@ -145,7 +147,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
         for path in ("contact", "contact-us", "contactus"):
             try:
                 r2, text2 = await fetch(client, urljoin(str(resp.url), "/" + path))  # from the site root, not the current folder
-            except httpx.HTTPError:
+            except (httpx.HTTPError, httpx.InvalidURL):
                 continue
             if r2.status_code < 400:
                 emails = extract_emails(text2, BeautifulSoup(text2, "html.parser"))

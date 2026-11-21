@@ -166,3 +166,47 @@ def test_only_real_failures_are_bounces(frm, subject, expected):
     g = _gmail_with([(frm, subject, "Hello, how much?")])
     kinds = [m["kind"] for m in g.incoming("t1", "me@gmail.com")]
     assert kinds == ([expected] if expected else [])
+
+
+# ---- 4. One bad record never breaks a whole step -------------------------------------------
+
+def _business(con, bid, website=None, emails="[]"):
+    con.execute("insert into businesses (id, source, name, website, emails, fetched_at) values (?, 'overture', ?, ?, ?, '2026-11-20')",
+                (bid, f"Biz {bid}", website, emails))
+    con.commit()
+
+
+@pytest.mark.parametrize("url", ["http://site.com:80a"])
+def test_invalid_url_is_recorded_as_broken(url):
+    import asyncio
+
+    import httpx
+    import respx
+
+    from leadscout.audit.site import audit_site
+
+    async def go():
+        async with httpx.AsyncClient() as client:
+            return await audit_site(client, url)
+
+    with respx.mock:  # nothing may reach the network
+        r = asyncio.run(go())
+    assert r["site_class"] == "broken" and r["fetch_error"] == "invalid_url"
+
+
+def test_one_failing_business_does_not_stop_the_audit(con, monkeypatch):
+    from leadscout import audit
+
+    _business(con, "ok", "https://good.in")
+    _business(con, "bad", "https://bad.in")
+
+    async def fake(client, url):
+        if "bad" in url:
+            raise RuntimeError("boom")
+        return {"site_class": "real", "final_url": url, "https": 1}
+
+    monkeypatch.setattr(audit, "audit_site", fake)
+    assert audit.audit_pending(con, run_psi=False) == 2
+    got = dict(con.execute("select business_id, site_class from audits").fetchall())
+    assert got == {"ok": "real", "bad": "broken"}
+    assert audit.audit_pending(con, run_psi=False) == 0  # nothing left pending to block later searches
