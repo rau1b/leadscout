@@ -165,7 +165,10 @@ def resolve_stuck(con, gmail) -> dict:
         found = gmail.sent_to(c["email"], datetime.fromisoformat(c["claimed_at"]))
         if found:
             if c["kind"] == "first":
-                con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ? and status = 'approved'", (now(), c["business_id"]))
+                con.execute(  # 'send_failed' too: the error came after Gmail had already taken it
+                    "update leads set status = 'contacted', updated_at = ? where business_id = ? and status in ('approved', 'send_failed')",
+                    (now(), c["business_id"]),
+                )
             con.execute(
                 "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', ?, ?, ?, ?, ?)",
                 (c["business_id"], c["kind"], c["email"], found["id"], found["threadId"], c["claimed_at"]),
@@ -185,7 +188,7 @@ def check_replies(con, cfg, gmail) -> dict:
         """select l.business_id, l.email, l.status, o.thread_id, b.phone from leads l
            join businesses b on b.id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
-           where l.status in ('contacted', 'replied', 'won')"""
+           where l.status in ('contacted', 'replied', 'won', 'send_failed')"""
     ).fetchall()
     for r in rows:
         for m in gmail.incoming(r["thread_id"], cfg.sender["email"]):
@@ -200,7 +203,7 @@ def check_replies(con, cfg, gmail) -> dict:
             if r["status"] == "won":
                 continue  # a paying customer: never auto-opt-out; the saved reply shows it, you decide
             # A first answer moves the lead on; a later "no" always wins.
-            if m["kind"] in ("opted_out", "bounced") or r["status"] == "contacted":
+            if m["kind"] in ("opted_out", "bounced") or r["status"] in ("contacted", "send_failed"):
                 con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (m["kind"], now(), r["business_id"]))
             if m["kind"] in ("opted_out", "bounced"):
                 suppress(con, r["email"], m["kind"])
@@ -246,6 +249,7 @@ def send_reply(con, cfg, gmail, business_id: str, body: str) -> None:
     con.commit()
 
 
+MAX_FAILS_IN_A_ROW = 3  # more than this looks like Gmail or the network, not one bad lead
 LEASE_KEY = "sender_lease"
 
 
@@ -295,6 +299,7 @@ def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, s
 
 def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
     sc = cfg.sending
+    fails = 0
     while True:
         if not renew():
             log("Another sender took over. Stopping.")
@@ -322,7 +327,22 @@ def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
         if not item:
             log("Nothing left to send. Approve more pitches in the dashboard.")
             return
-        log(f"[{done + 1}/{cap}] " + send_one(con, cfg, gmail, item, dry_run))
+        try:
+            log(f"[{done + 1}/{cap}] " + send_one(con, cfg, gmail, item, dry_run))
+            fails = 0
+        except Exception as e:
+            # Mark it so the same lead isn't picked first again on every run.
+            con.rollback()
+            con.execute("update leads set status = 'send_failed', updated_at = ? where business_id = ?", (now(), item["business_id"]))
+            con.commit()
+            fails += 1
+            log(f"Could not send {item['kind']} to {item['name']} <{item['email']}>: {e}")
+            if fails >= MAX_FAILS_IN_A_ROW:
+                log(f"{fails} sends failed in a row. Stopping; check Gmail and your connection.")
+                return
+            if once:
+                return
+            continue
         if once or dry_run:
             return
         gap = random.randint(sc["min_gap_seconds"], sc["max_gap_seconds"])

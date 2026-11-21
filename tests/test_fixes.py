@@ -247,3 +247,59 @@ def test_email_with_empty_label_is_rejected_without_crashing(con, cfg, fake_dns)
     con.execute("insert into audits (business_id, site_class, audited_at) values ('b1', 'none', '2026-11-20')")
     score_all(con, cfg)  # used to raise EmptyLabel on every run
     assert con.execute("select email from leads").fetchone()[0] is None
+
+
+class FlakyGmail:
+    """Fails to send to the addresses in `bad`; everything else 'sends' (in memory)."""
+
+    def __init__(self, bad=()):
+        self.bad, self.sent = set(bad), []
+
+    def incoming(self, thread_id, me):
+        return []
+
+    def message_id_header(self, gid):
+        return None
+
+    def send(self, to, subject, body, sender, thread_id=None, in_reply_to=None, unsubscribe=None):
+        if to in self.bad or "*" in self.bad:
+            raise RuntimeError("Gmail 500")
+        self.sent.append(to)
+        return {"id": f"s{len(self.sent)}", "threadId": f"t{len(self.sent)}"}
+
+
+def _approved(con, bid, email, score):
+    _lead(con, bid, status="approved", email=email)
+    con.execute("update leads set score = ? where business_id = ?", (score, bid))
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values (?, 'S', 'B', 'template', 1, 'x', 'x')", (bid,))
+    con.commit()
+
+
+@pytest.fixture
+def no_wait(monkeypatch):
+    from leadscout.mailer import sender
+
+    monkeypatch.setattr(sender, "in_window", lambda *a: True)
+    monkeypatch.setattr(sender.time, "sleep", lambda s: None)
+
+
+def test_send_error_marks_lead_and_moves_on(con, cfg, no_wait):
+    from leadscout.mailer import sender
+
+    _approved(con, "b1", "first@clinic.in", 90)  # best score: picked first, and fails
+    _approved(con, "b2", "second@clinic.in", 80)
+    gm = FlakyGmail(bad={"first@clinic.in"})
+    logs = []
+    sender.run(con, cfg, gm, log=logs.append)
+    assert _status(con, "b1") == "send_failed" and _status(con, "b2") == "contacted"
+    assert gm.sent == ["second@clinic.in"] and any("first@clinic.in" in m for m in logs)
+
+
+def test_repeated_send_errors_stop_the_run(con, cfg, no_wait):
+    from leadscout.mailer import sender
+
+    for i in range(5):
+        _approved(con, f"b{i}", f"o{i}@clinic.in", 90 - i)
+    sender.run(con, cfg, FlakyGmail(bad={"*"}), log=lambda m: None)
+    statuses = [r[0] for r in con.execute("select status from leads order by business_id")]
+    assert statuses.count("send_failed") == 3 and statuses.count("approved") == 2

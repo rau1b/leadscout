@@ -58,6 +58,7 @@ tpl = Jinja2Templates(directory=HERE / "templates")
 STATUS_LABELS = {
     "new": "New", "drafted": "Drafted", "approved": "Approved", "contacted": "Contacted", "replied": "Replied",
     "won": "Won", "lost": "Lost", "opted_out": "Opted out", "bounced": "Bounced", "excluded": "Excluded", "hidden": "Hidden",
+    "send_failed": "Send failed",
 }
 tpl.env.globals.update(status_labels=STATUS_LABELS, site_labels=LABELS)
 tpl.env.filters["nicecat"] = lambda c: (c or "").replace("_", " ").capitalize()

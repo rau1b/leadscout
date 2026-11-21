@@ -125,8 +125,9 @@ create index if not exists idx_outreach_sent on outreach(sent_at);
 
 # Lead status flow:
 # new -> drafted -> approved -> contacted -> replied | won | lost
-# plus: opted_out, bounced, excluded (by scoring), hidden (by you; scoring never changes it)
-STATUSES = ["new", "drafted", "approved", "contacted", "replied", "won", "lost", "opted_out", "bounced", "excluded", "hidden"]
+# plus: opted_out, bounced, excluded (by scoring), hidden (by you; scoring never changes it),
+# send_failed (Gmail refused the send; the sender moved on)
+STATUSES = ["new", "drafted", "approved", "contacted", "replied", "won", "lost", "opted_out", "bounced", "excluded", "hidden", "send_failed"]
 
 
 def now() -> str:
