@@ -697,3 +697,19 @@ def test_quick_reply_with_stray_braces_falls_back_to_raw_text(cfg, text):
 
     out = quick_replies.fill(text, {"name": "Smile"}, cfg)
     assert out.startswith(text) and cfg.sender["name"] in out
+
+
+# ---- Minor: quotes around .env values ------------------------------------------------------
+
+@pytest.mark.parametrize("line,value", [
+    ('GOOGLE_API_KEY="abc123"', "abc123"),
+    ("GOOGLE_API_KEY='abc123'", "abc123"),
+    ("GOOGLE_API_KEY = abc123 ", "abc123"),
+    ('GOOGLE_API_KEY="it\'s"', "it's"),
+    ('GOOGLE_API_KEY="', '"'),  # a lone quote isn't a quoted value
+])
+def test_env_values_lose_their_quotes(tmp_path, monkeypatch, line, value):
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    (tmp_path / ".env").write_text(line + "\n", encoding="utf-8")
+    assert config.load().google_api_key == value
