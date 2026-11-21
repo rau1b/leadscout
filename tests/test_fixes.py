@@ -636,3 +636,21 @@ def test_forget_matches_exactly_and_cleans_pitch_files(tmp_path, monkeypatch):
     assert [x["id"] for x in json.loads((d / "pitch_jobs.json").read_text(encoding="utf-8"))["leads"]] == ["data"]
     assert [x["id"] for x in json.loads((d / "pitch_results.json").read_text(encoding="utf-8"))] == ["data"]
     assert json.loads((d / "pitch_results.imported.json").read_text(encoding="utf-8")) == []
+
+
+# ---- 14. "professional" search doesn't find taxis ------------------------------------------
+
+@pytest.mark.parametrize("row,hit", [
+    ({"category": "taxi_service", "name": "City Cabs"}, False),
+    ({"category": "travel", "name": "Sai Taxi Service"}, False),
+    ({"category": "tax_advisor", "name": "Rao & Co"}, True),
+    ({"category": "professional_services", "name": "Sharma Tax Consultants"}, True),
+    ({"category": "accountant", "name": "Gupta Associates"}, True),
+    ({"category": "financial_service", "name": "Income Tax Return Filing Centre"}, True),
+])
+def test_professional_search_skips_taxis(row, hit):
+    from leadscout.searches import BUSINESS_TYPES
+    from leadscout.sources.overture import matches
+
+    terms = BUSINESS_TYPES["professional"][1].split(",")
+    assert matches(row, terms) is hit
