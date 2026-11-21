@@ -9,7 +9,7 @@ from functools import lru_cache
 import dns.exception
 import dns.resolver
 
-EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$")  # no empty labels like "abc..com"
 FREE_PROVIDERS = {"gmail.com", "yahoo.com", "yahoo.co.in", "hotmail.com", "outlook.com", "rediffmail.com", "ymail.com", "live.com", "icloud.com"}
 
 
@@ -20,7 +20,7 @@ def domain_accepts_mail(domain: str) -> bool:
     try:
         dns.resolver.resolve(domain, "MX", lifetime=5)
         return True
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, dns.exception.Timeout):
+    except dns.exception.DNSException:  # NXDOMAIN, timeouts, and bad names such as EmptyLabel
         return False
 
 

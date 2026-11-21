@@ -210,3 +210,40 @@ def test_one_failing_business_does_not_stop_the_audit(con, monkeypatch):
     got = dict(con.execute("select business_id, site_class from audits").fetchall())
     assert got == {"ok": "real", "bad": "broken"}
     assert audit.audit_pending(con, run_psi=False) == 0  # nothing left pending to block later searches
+
+
+@pytest.fixture
+def fake_dns(monkeypatch):
+    """DNS without the network: parse the name like dnspython does, then answer from `answers`."""
+    import dns.name
+    import dns.resolver
+
+    from leadscout import emailcheck
+
+    answers = {}
+
+    def resolve(domain, rtype, lifetime=None):
+        dns.name.from_text(domain)  # raises EmptyLabel for "abc..com", as the real resolver does
+        outcome = answers.get(domain, dns.resolver.NXDOMAIN)
+        if outcome is True:
+            return ["mx"]
+        raise outcome()
+
+    monkeypatch.setattr(dns.resolver, "resolve", resolve)
+    emailcheck.domain_accepts_mail.cache_clear()
+    yield answers
+    emailcheck.domain_accepts_mail.cache_clear()
+
+
+def test_email_with_empty_label_is_rejected_without_crashing(con, cfg, fake_dns):
+    from leadscout import emailcheck
+    from leadscout.scoring import score_all
+
+    assert not emailcheck.EMAIL_RE.match("info@abc..com")
+    assert not emailcheck.EMAIL_RE.match("info@.abc.com")
+    assert emailcheck.EMAIL_RE.match("info@abc.co.in")
+    assert emailcheck.domain_accepts_mail("abc..com") is False
+    _business(con, "b1", emails='["info@abc..com"]')
+    con.execute("insert into audits (business_id, site_class, audited_at) values ('b1', 'none', '2026-11-20')")
+    score_all(con, cfg)  # used to raise EmptyLabel on every run
+    assert con.execute("select email from leads").fetchone()[0] is None
