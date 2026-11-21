@@ -584,3 +584,30 @@ def test_stop_ignores_a_garbled_pid_file(tmp_path, monkeypatch):
     monkeypatch.setattr(launch, "PID_FILE", pid_file)
     monkeypatch.setattr(launch, "_kill", lambda pid: pytest.fail("must not kill"))
     assert launch.stop() is False and not pid_file.exists()
+
+
+# ---- 12. No pitch without a measured fact --------------------------------------------------
+
+NOTHING_MEASURED = {"site_class": "real", "fetch_error": "blocked (403)", "https": 1, "perf_score": None, "lcp_s": None,
+                    "viewport": None, "copyright_year": None, "has_whatsapp": None}
+
+
+def test_unmeasured_real_site_gets_no_template_pitch(con, cfg):
+    from leadscout.pitch import templates
+
+    with pytest.raises(ValueError):
+        templates.render({**NOTHING_MEASURED, "name": "X", "category": "dentist"}, cfg)
+    _lead(con, "blocked", status="new", site_class="real", **{k: v for k, v in NOTHING_MEASURED.items() if k != "site_class"})
+    _lead(con, "nosite", status="new")
+    con.execute("update leads set score = 99 where business_id = 'blocked'")  # ranks first, must not use up the limit
+    assert jobs.draft_with_templates(con, cfg, 1) == 1
+    assert _status(con, "blocked") == "new" and _status(con, "nosite") == "drafted"
+
+
+def test_pitch_only_mentions_the_speed_test_when_it_ran(cfg):
+    from leadscout.pitch import templates
+
+    no_psi = {**NOTHING_MEASURED, "viewport": 0, "name": "X", "category": "dentist"}
+    assert "speed" not in templates.render(no_psi, cfg)["body"].lower()
+    with_psi = {**no_psi, "perf_score": 31}
+    assert "Google's free speed and mobile test" in templates.render(with_psi, cfg)["body"]

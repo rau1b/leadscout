@@ -19,12 +19,17 @@ limit ?
 
 
 def pending_facts(con, min_score: int, limit: int) -> list[dict]:
-    rows = con.execute(FACTS_SQL, (min_score, limit)).fetchall()
+    """The best new leads that have a measured problem to pitch (filtered before the limit, so unpitchable
+    leads never use up the slots)."""
     out = []
-    for r in rows:
+    for r in con.execute(FACTS_SQL, (min_score, -1)):
         f = dict(r)
+        if not templates.has_measured_problem(f):
+            continue
         f["reasons"] = jload(f["reasons"])
         out.append(f)
+        if len(out) >= limit:
+            break
     return out
 
 

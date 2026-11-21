@@ -281,7 +281,11 @@ def draft_from_template(lead_id: str):
     problem = config.sender_problem(cfg)
     if problem:
         return RedirectResponse(f"/leads/{lead_id}?msg={quote(problem)}", status_code=303)
-    jobs.save_pitch(con, lead_id, templates.render(dict(r), cfg), "template")
+    try:
+        pitch = templates.render(dict(r), cfg)
+    except ValueError as e:  # nothing measured on this site
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(str(e))}", status_code=303)
+    jobs.save_pitch(con, lead_id, pitch, "template")
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}?saved=drafted", status_code=303)
 
