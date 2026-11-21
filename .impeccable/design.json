@@ -1,0 +1,536 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T12:00:00+00:00",
+  "title": "Design System: LeadScout",
+  "extensions": {
+    "colorMeta": {
+      "bordeaux": {
+        "role": "primary",
+        "displayName": "Bordeaux",
+        "canonical": "#531B24",
+        "oklch": "oklch(31.2% 0.084 13.7)",
+        "tonalRamp": [
+          "#190406",
+          "#3B191D",
+          "#603338",
+          "#874E54",
+          "#AC6F74",
+          "#CB9599",
+          "#EABCBF",
+          "#FFE4E6"
+        ]
+      },
+      "wine": {
+        "role": "secondary",
+        "displayName": "Wine Ink",
+        "canonical": "#6A2931",
+        "oklch": "oklch(37.7% 0.093 15.2)",
+        "tonalRamp": [
+          "#1A0305",
+          "#3D171B",
+          "#633035",
+          "#8B4B51",
+          "#B06C71",
+          "#CF9396",
+          "#EDBABD",
+          "#FFE3E4"
+        ]
+      },
+      "ink-soft": {
+        "role": "secondary",
+        "displayName": "Wine Wash",
+        "canonical": "#EADBD0",
+        "oklch": "oklch(90.0% 0.022 58.8)",
+        "tonalRamp": [
+          "#0F0A07",
+          "#2A231E",
+          "#494039",
+          "#6B5F56",
+          "#8C8076",
+          "#AEA39B",
+          "#D1C7C0",
+          "#F4EDE7"
+        ]
+      },
+      "sand": {
+        "role": "tertiary",
+        "displayName": "Warm Sand",
+        "canonical": "#C6B7A2",
+        "oklch": "oklch(78.6% 0.034 76.4)",
+        "tonalRamp": [
+          "#0F0A04",
+          "#2B2419",
+          "#4A4032",
+          "#6C5F4E",
+          "#8D806E",
+          "#AFA393",
+          "#D1C8BA",
+          "#F5EDE3"
+        ]
+      },
+      "linen": {
+        "role": "tertiary",
+        "displayName": "Linen",
+        "canonical": "#E7D8C3",
+        "oklch": "oklch(88.9% 0.033 76.4)",
+        "tonalRamp": [
+          "#0F0A05",
+          "#2B241A",
+          "#4A4033",
+          "#6B5F4E",
+          "#8D806E",
+          "#AEA394",
+          "#D1C8BB",
+          "#F5EDE3"
+        ]
+      },
+      "green": {
+        "role": "tertiary",
+        "displayName": "Ledger Green",
+        "canonical": "#2E7D32",
+        "oklch": "oklch(52.3% 0.135 144.2)",
+        "tonalRamp": [
+          "#001100",
+          "#002F04",
+          "#145018",
+          "#2B732E",
+          "#4F9550",
+          "#7BB67B",
+          "#A7D8A6",
+          "#D4FBD3"
+        ]
+      },
+      "green-deep": {
+        "role": "tertiary",
+        "displayName": "Deep Ledger Green",
+        "canonical": "#1B5E20",
+        "oklch": "oklch(42.5% 0.116 144.3)",
+        "tonalRamp": [
+          "#001100",
+          "#072E0A",
+          "#1E4E20",
+          "#367138",
+          "#579358",
+          "#82B481",
+          "#ACD6AB",
+          "#D8F9D7"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Clear Red",
+        "canonical": "#B42318",
+        "oklch": "oklch(50.0% 0.182 29.5)",
+        "tonalRamp": [
+          "#260000",
+          "#4F0000",
+          "#7C1109",
+          "#AC2A1F",
+          "#D45141",
+          "#F17F6F",
+          "#FFAC9D",
+          "#FFD9CC"
+        ]
+      },
+      "danger-soft": {
+        "role": "tertiary",
+        "displayName": "Red Wash",
+        "canonical": "#FBE3DF",
+        "oklch": "oklch(93.4% 0.027 29.0)",
+        "tonalRamp": [
+          "#100908",
+          "#2D2220",
+          "#4D3E3C",
+          "#6F5C59",
+          "#917D7A",
+          "#B2A09D",
+          "#D4C5C3",
+          "#F7EBE9"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Bordeaux Black",
+        "canonical": "#2A1A1D",
+        "oklch": "oklch(24.0% 0.026 6.9)",
+        "tonalRamp": [
+          "#10090A",
+          "#2C2224",
+          "#4C3E40",
+          "#6E5C5F",
+          "#907D80",
+          "#B1A0A3",
+          "#D3C5C7",
+          "#F7EBED"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Warm Pencil",
+        "canonical": "#6B5A55",
+        "oklch": "oklch(48.3% 0.024 37.0)",
+        "tonalRamp": [
+          "#100908",
+          "#2C2320",
+          "#4B3F3B",
+          "#6D5D58",
+          "#8F7E79",
+          "#B0A19D",
+          "#D3C6C2",
+          "#F6ECE9"
+        ]
+      },
+      "chip-text": {
+        "role": "neutral",
+        "displayName": "Chip Ink",
+        "canonical": "#4A3A36",
+        "oklch": "oklch(36.5% 0.024 34.4)",
+        "tonalRamp": [
+          "#100908",
+          "#2C2320",
+          "#4B3F3B",
+          "#6D5D59",
+          "#8F7E7A",
+          "#B0A19D",
+          "#D3C6C3",
+          "#F6ECE9"
+        ]
+      },
+      "porcelain": {
+        "role": "neutral",
+        "displayName": "Porcelain",
+        "canonical": "#F3ECE2",
+        "oklch": "oklch(94.6% 0.015 77.1)",
+        "tonalRamp": [
+          "#0D0B08",
+          "#282520",
+          "#46413B",
+          "#666058",
+          "#878179",
+          "#A9A49D",
+          "#CDC8C2",
+          "#F1EEE9"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Card Paper",
+        "canonical": "#FFFCF8",
+        "oklch": "oklch(99.2% 0.006 75.4)",
+        "tonalRamp": [
+          "#0C0B0A",
+          "#262523",
+          "#43423F",
+          "#63615E",
+          "#84827F",
+          "#A7A5A2",
+          "#CBC9C6",
+          "#F0EEEC"
+        ]
+      },
+      "sunk": {
+        "role": "neutral",
+        "displayName": "Sunk Paper",
+        "canonical": "#EBE1D3",
+        "oklch": "oklch(91.4% 0.022 76.5)",
+        "tonalRamp": [
+          "#0E0B07",
+          "#29241E",
+          "#474138",
+          "#686055",
+          "#898175",
+          "#ABA49A",
+          "#CEC8BF",
+          "#F3EEE7"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Panel Rule",
+        "canonical": "#DCCDB8",
+        "oklch": "oklch(85.5% 0.033 76.4)",
+        "tonalRamp": [
+          "#0F0A05",
+          "#2B241A",
+          "#4A4033",
+          "#6B5F4E",
+          "#8D806E",
+          "#AEA394",
+          "#D1C8BA",
+          "#F5EDE3"
+        ]
+      },
+      "row": {
+        "role": "neutral",
+        "displayName": "Row Rule",
+        "canonical": "#E6DACA",
+        "oklch": "oklch(89.4% 0.025 75.3)",
+        "tonalRamp": [
+          "#0E0A06",
+          "#2A241C",
+          "#484136",
+          "#696053",
+          "#8B8173",
+          "#ACA498",
+          "#CFC8BE",
+          "#F3EDE6"
+        ]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#A5A5A5",
+          "#C9C9C9",
+          "#EEEEEE"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page title in the header."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heads on Today."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Day page and side panel heads, pitch business names."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "The day's sent / cap total, in wine."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text; pitch and message bodies cap at 72ch."
+      },
+      "table": {
+        "displayName": "Table",
+        "purpose": "All table rows."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels and table headers."
+      },
+      "hint": {
+        "displayName": "Hint",
+        "purpose": "Help lines, slot rows, meta."
+      },
+      "chip": {
+        "displayName": "Chip",
+        "purpose": "Status chips."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Button labels; 13.5px on small buttons."
+      },
+      "brand": {
+        "displayName": "Brand",
+        "purpose": "The LeadScout wordmark on the rail."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "control-hover",
+        "value": "background-color .15s ease-out",
+        "purpose": "Button background change on hover."
+      },
+      {
+        "name": "status-swap",
+        "value": "background-color .3s ease-out, color .3s ease-out",
+        "purpose": "Status chip recolour when an HTMX swap changes a lead's status."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition: none",
+        "purpose": "All transitions removed under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stack",
+        "value": "1100px",
+        "purpose": "Two-column bodies collapse to one column."
+      },
+      {
+        "name": "rail-top",
+        "value": "820px",
+        "purpose": "Rail becomes a top band; secondary columns hide."
+      },
+      {
+        "name": "finder-single",
+        "value": "520px",
+        "purpose": "Finder business-type checklist drops to one column."
+      },
+      {
+        "name": "finder-single",
+        "value": "520px",
+        "purpose": "Finder business-type checklist drops to one column."
+      }
+    ],
+    "borders": [
+      {
+        "name": "stitched-seam",
+        "value": "2px dashed #C6B7A2",
+        "purpose": "Rail edge, 8px in from the right (bottom on mobile)."
+      },
+      {
+        "name": "day-close",
+        "value": "3px double #531B24",
+        "purpose": "Closes the day page above the carry-forward line; also opens the reply form."
+      },
+      {
+        "name": "header-rule",
+        "value": "2px solid #2A1A1D",
+        "purpose": "Under table headers and over table footers."
+      },
+      {
+        "name": "focus",
+        "value": "2px solid #6A2931, offset 2px",
+        "purpose": "Global focus-visible outline."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Bordeaux stamp for the main action on a screen (Approve, Save and approve, Review N pitches).",
+      "html": "<button class=\"ds-btn\">Approve</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; gap:8px; font-family: Mukta, 'Segoe UI', sans-serif; font-weight:600; font-size:14.5px; line-height:1; padding:10px 16px; border-radius:6px; border:1px solid var(--bordeaux, #531B24); background:var(--bordeaux, #531B24); color:#fff; cursor:pointer; transition: background-color .15s ease-out; } .ds-btn:hover { background:var(--wine, #6A2931); border-color:var(--wine, #6A2931); } .ds-btn:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Secondary actions: Edit, Save, Search, Open WhatsApp chat.",
+      "html": "<button class=\"ds-btn ds-btn-quiet\">Edit</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; gap:8px; font-family: Mukta, 'Segoe UI', sans-serif; font-weight:600; font-size:14.5px; line-height:1; padding:10px 16px; border-radius:6px; border:1px solid var(--bordeaux, #531B24); background:var(--bordeaux, #531B24); color:#fff; cursor:pointer; transition: background-color .15s ease-out; } .ds-btn:hover { background:var(--wine, #6A2931); border-color:var(--wine, #6A2931); } .ds-btn:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-btn-quiet { background:var(--input, #FFFCF8); color:var(--wine, #6A2931); border-color:currentColor; } .ds-btn-quiet:hover { background:var(--ink-soft, #EADBD0); border-color:currentColor; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Irreversible opt-out only; usually small.",
+      "html": "<button class=\"ds-btn ds-btn-danger ds-btn-small\">Opt out for good</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; gap:8px; font-family: Mukta, 'Segoe UI', sans-serif; font-weight:600; font-size:14.5px; line-height:1; padding:10px 16px; border-radius:6px; border:1px solid var(--bordeaux, #531B24); background:var(--bordeaux, #531B24); color:#fff; cursor:pointer; transition: background-color .15s ease-out; } .ds-btn:hover { background:var(--wine, #6A2931); border-color:var(--wine, #6A2931); } .ds-btn:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-btn-danger { background:var(--input, #FFFCF8); color:var(--danger, #B42318); border-color:currentColor; } .ds-btn-danger:hover { background:var(--danger-soft, #FBE3DF); border-color:currentColor; } .ds-btn-small { padding:6px 10px; font-size:13.5px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Labelled text input used for subject and search.",
+      "html": "<label class=\"ds-label\" for=\"ds-subj\">Subject</label><input id=\"ds-subj\" class=\"ds-input\" type=\"text\" value=\"Your website's domain has expired\">",
+      "css": ".ds-label { display:block; font-family: Mukta, 'Segoe UI', sans-serif; font-weight:600; font-size:14px; margin-bottom:4px; color:var(--text, #2A1A1D); } .ds-input { font-family: Mukta, 'Segoe UI', sans-serif; font-size:15px; line-height:1.5; color:var(--text, #2A1A1D); border:1px solid var(--sand, #C6B7A2); border-radius:6px; padding:7px 10px; background:var(--input, #FFFCF8); width:100%; caret-color:var(--wine, #6A2931); } .ds-input:focus { border-color:var(--wine, #6A2931); outline:2px solid var(--ink-soft, #EADBD0); outline-offset:0; }"
+    },
+    {
+      "name": "Rail Navigation",
+      "kind": "nav",
+      "refersTo": "rail",
+      "description": "Bordeaux cloth rail with a dashed sand seam; links carry counts; current page on linen.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-brand\">LeadScout</div><a href=\"#\" aria-current=\"page\">Today <small>12/30</small></a><a href=\"#\">Pitches <small>18</small></a><a href=\"#\">Leads <small>240</small></a></nav>",
+      "css": ".ds-rail { position:relative; width:216px; background:var(--bordeaux, #531B24); color:#fff; padding:24px 0; font-family: Mukta, 'Segoe UI', sans-serif; } .ds-rail::after { content:''; position:absolute; top:12px; bottom:12px; right:8px; border-right:2px dashed var(--sand, #C6B7A2); pointer-events:none; } .ds-brand { font-weight:700; font-size:21px; letter-spacing:-0.01em; padding:0 24px 24px; } .ds-rail a { display:flex; justify-content:space-between; align-items:baseline; padding:9px 24px; margin-right:16px; color:#fff; text-decoration:none; font-size:15.5px; border-radius:0 6px 6px 0; } .ds-rail a:hover { background:var(--wine, #6A2931); } .ds-rail a:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-rail a[aria-current=page] { background:var(--linen, #E7D8C3); color:var(--bordeaux, #531B24); font-weight:600; } .ds-rail small { font-size:13px; color:var(--linen, #E7D8C3); } .ds-rail a[aria-current=page] small { color:var(--bordeaux, #531B24); }"
+    },
+    {
+      "name": "Status Tabs",
+      "kind": "nav",
+      "refersTo": "status-tabs",
+      "description": "Filter tabs over the leads table; current tab underlined in Bordeaux.",
+      "html": "<nav class=\"ds-tabs\"><a href=\"#\" aria-current=\"page\">Active<small>212</small></a><a href=\"#\">Drafted<small>18</small></a><a href=\"#\">Replied<small>3</small></a></nav>",
+      "css": ".ds-tabs { display:flex; gap:2px; border-bottom:1px solid var(--rule, #DCCDB8); font-family: Mukta, 'Segoe UI', sans-serif; } .ds-tabs a { padding:6px 12px; text-decoration:none; color:var(--muted, #6B5A55); border-bottom:3px solid transparent; margin-bottom:-1px; font-weight:500; } .ds-tabs a:hover { color:var(--text, #2A1A1D); } .ds-tabs a:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-tabs a[aria-current=page] { color:var(--text, #2A1A1D); border-bottom-color:var(--bordeaux, #531B24); font-weight:600; } .ds-tabs small { color:var(--muted, #6B5A55); margin-left:4px; }"
+    },
+    {
+      "name": "Status Chips",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "The single colour code for lead status, used on every surface.",
+      "html": "<span class=\"ds-st ds-st-new\">New</span> <span class=\"ds-st ds-st-drafted\">Drafted</span> <span class=\"ds-st ds-st-approved\">Approved</span> <span class=\"ds-st ds-st-contacted\">Contacted</span> <span class=\"ds-st ds-st-replied\">Replied</span> <span class=\"ds-st ds-st-won\">Won</span> <span class=\"ds-st ds-st-lost\">Lost</span> <span class=\"ds-st ds-st-opted\">Opted out</span> <span class=\"ds-st ds-st-bounced\">Bounced</span> <span class=\"ds-st ds-st-excluded\">Excluded</span>",
+      "css": ".ds-st { display:inline-block; font-family: Mukta, 'Segoe UI', sans-serif; line-height:1.4; padding:3px 9px 1px; border-radius:10px; font-size:12.5px; font-weight:600; white-space:nowrap; border:1px solid transparent; transition: background-color .3s ease-out, color .3s ease-out; } .ds-st-new { background:var(--linen, #E7D8C3); color:var(--chip-text, #4A3A36); } .ds-st-drafted { border-color:var(--wine, #6A2931); color:var(--wine, #6A2931); } .ds-st-approved { background:var(--wine, #6A2931); color:#fff; } .ds-st-contacted { background:var(--sand, #C6B7A2); color:var(--text, #2A1A1D); } .ds-st-replied { background:var(--green, #2E7D32); color:#fff; } .ds-st-won { background:var(--green-deep, #1B5E20); color:#fff; } .ds-st-lost { background:var(--linen, #E7D8C3); color:var(--muted, #6B5A55); text-decoration:line-through; } .ds-st-opted { border-color:var(--danger, #B42318); color:var(--danger, #B42318); } .ds-st-bounced { background:var(--danger, #B42318); color:#fff; } .ds-st-excluded { color:var(--muted, #6B5A55); border-color:var(--sand, #C6B7A2); }"
+    },
+    {
+      "name": "Day Page",
+      "kind": "custom",
+      "refersTo": "day-page",
+      "description": "The signature fixed-capacity page on card paper: sent slots in wine, empty slots, closed with a Bordeaux double rule.",
+      "html": "<section class=\"ds-page\"><h2>Today's page <b>3 / 15</b></h2><p class=\"ds-when\">Window open until 18:00.</p><ol class=\"ds-slots\"><li><time>09:42</time><a href=\"#\">Sri Sai Dental Care</a></li><li><time>09:55</time><a href=\"#\">Kukatpally Opticals</a></li><li class=\"ds-f\"><time>queued</time><a href=\"#\">Ravi Physio Clinic</a></li><li class=\"ds-next\"><time></time>empty</li><li class=\"ds-next\"><time></time></li></ol><p class=\"ds-close\">11 slots still open</p></section>",
+      "css": ".ds-page { width:300px; background:var(--input, #FFFCF8); border:1px solid var(--rule, #DCCDB8); border-radius:8px; padding:16px; font-family: Mukta, 'Segoe UI', sans-serif; color:var(--text, #2A1A1D); } .ds-page h2 { margin:0; font-size:16px; line-height:1.2; display:flex; justify-content:space-between; align-items:baseline; } .ds-page h2 b { color:var(--wine, #6A2931); font-size:24px; font-variant-numeric:tabular-nums; } .ds-when { color:var(--muted, #6B5A55); font-size:13.5px; margin:2px 0 0; } .ds-slots { list-style:none; margin:12px 0 0; padding:0; } .ds-slots li { height:22px; border-bottom:1px solid var(--row, #E6DACA); font-size:13.5px; color:var(--wine, #6A2931); display:flex; gap:8px; white-space:nowrap; overflow:hidden; font-variant-numeric:tabular-nums; } .ds-slots time { color:var(--muted, #6B5A55); width:48px; flex:none; } .ds-slots a { color:inherit; text-decoration:none; } .ds-slots a:hover { text-decoration:underline; } .ds-slots a:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-slots .ds-f { color:var(--muted, #6B5A55); } .ds-slots .ds-next { color:var(--muted, #6B5A55); font-style:italic; } .ds-close { margin:12px 0 0; border-top:3px double var(--bordeaux, #531B24); padding-top:8px; color:var(--bordeaux, #531B24); font-weight:600; font-size:14.5px; }"
+    },
+    {
+      "name": "Ledger Table",
+      "kind": "custom",
+      "refersTo": "ledger-table",
+      "description": "Dense ruled lead table: wine names, muted headers over a Bordeaux-black rule, right-aligned bold score.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Business</th><th>What's wrong</th><th class=\"ds-num\">Score</th><th>Status</th></tr></thead><tbody><tr><td class=\"ds-n\"><a href=\"#\">Sri Sai Dental Care</a></td><td>Domain expired</td><td class=\"ds-sc\">86</td><td><span class=\"ds-chip ds-chip-drafted\">Drafted</span></td></tr><tr><td class=\"ds-n\"><a href=\"#\">Kukatpally Opticals</a></td><td>Facebook page only</td><td class=\"ds-sc\">74</td><td><span class=\"ds-chip ds-chip-approved\">Approved</span></td></tr></tbody></table>",
+      "css": ".ds-table { width:100%; border-collapse:collapse; font-family: Mukta, 'Segoe UI', sans-serif; font-size:14px; line-height:1.5; color:var(--text, #2A1A1D); font-variant-numeric:tabular-nums; } .ds-table th { text-align:left; font-weight:600; color:var(--muted, #6B5A55); padding:6px 8px; border-bottom:2px solid var(--text, #2A1A1D); } .ds-table td { padding:6px 8px; border-bottom:1px solid var(--row, #E6DACA); vertical-align:top; } .ds-table tbody tr:hover { background:var(--sunk, #EBE1D3); } .ds-n a { color:var(--wine, #6A2931); font-weight:600; text-decoration:none; } .ds-n a:hover { text-decoration:underline; } .ds-n a:focus-visible { outline:2px solid var(--wine, #6A2931); outline-offset:2px; } .ds-num { text-align:right; } .ds-sc { font-weight:700; text-align:right; width:52px; } .ds-chip { display:inline-block; line-height:1.4; padding:3px 9px 1px; border-radius:10px; font-size:12.5px; font-weight:600; border:1px solid transparent; } .ds-chip-drafted { border-color:var(--wine, #6A2931); color:var(--wine, #6A2931); } .ds-chip-approved { background:var(--wine, #6A2931); color:#fff; }"
+    },
+    {
+      "name": "Status Note",
+      "kind": "custom",
+      "refersTo": "note",
+      "description": "Linen confirmation after save, approve or opt-out.",
+      "html": "<p class=\"ds-note\" role=\"status\">Saved and approved. It's queued for sending.</p>",
+      "css": ".ds-note { padding:8px 12px; background:var(--linen, #E7D8C3); border-radius:6px; font-family: Mukta, 'Segoe UI', sans-serif; font-size:14.5px; color:var(--text, #2A1A1D); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Day's Bahi-khata",
+    "overview": "The dashboard is kept like a shop's cloth-bound account book, bound in Bordeaux wine. Each day is one page with a fixed number of lines (the warm-up cap), filled in wine ink as sends go out, ruled off in Bordeaux at the close, with what is left carried forward to tomorrow. Everything else on screen is the ledger's working pages: dense ruled rows, figures in tabular numerals, one status colour per entry.\n\nThe world sits on a warm porcelain working ground with a single strong frame: a Bordeaux rail down the left edge, stitched with a dashed sand seam. Cards and fields sit a step lighter than the page, like fresh leaves laid on the desk. Inside that frame the surface is quiet and dense. Depth comes from rules and that one tonal step, not shadows; emphasis comes from ink colour and weight, not from tiles. The build refuses the default SaaS shell of stat-card tiles over a grey table: totals live inside the page they belong to.\n\nDensity is a feature for two people doing a daily sit-down review on a laptop. Rows are tight (6px vertical padding), headers are short, and every lead row carries the measured fact behind it.",
+    "keyCharacteristics": [
+      "Bordeaux cloth rail with a sand stitched edge; warm porcelain working ground, cards and fields one step lighter.",
+      "Wine ink for names, links and figures; Bordeaux for primary actions and the book's closing rules.",
+      "Mukta throughout, tabular figures everywhere.",
+      "One colour code per lead status, identical on every surface.",
+      "Ruled rows and bordered panels; no shadows, no card tiles.",
+      "The day page: a fixed-capacity slot column closed with a Bordeaux double rule."
+    ],
+    "rules": [
+      {
+        "name": "The One Code Rule",
+        "body": "Each lead status has exactly one chip treatment (new linen, drafted wine outline, approved wine fill, contacted sand, replied green, won deep green, lost linen struck through, opted-out red outline, bounced red fill, excluded sand outline, hidden dashed sand outline) and it is the same on Today, Pitches, Replies, Leads and the lead page. Never restyle a status locally.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Rule",
+        "body": "Names and figures are written in wine ink; prose stays Bordeaux black. Bordeaux is for the book's frame, its primary actions and its closing rules; the clear red is only for bounced and opt-out. Neither is used for ordinary links.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ledger Figures Rule",
+        "body": "Tabular numerals are set on the body and inherited everywhere; never switch a numeric column to proportional figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ruled Book Rule",
+        "body": "Separate with lines, not lifts. If a new surface needs grouping, give it a rule or a panel border before anything else; the only tonal lift is card paper on porcelain.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep the Bordeaux rail and its dashed sand seam as the only heavy colour field on any screen.",
+      "**Do** write names, links and figures in wine ink (#6A2931), primary actions in Bordeaux (#531B24), and prose in Bordeaux black.",
+      "**Do** use the one status chip treatment for a status wherever it appears.",
+      "**Do** separate content with rules and 1px panel borders; keep rows dense (6px vertical padding).",
+      "**Do** show the measured fact behind a lead in Bordeaux 600 next to its name.",
+      "**Do** set cards and fields on card paper (#FFFCF8) over the porcelain page (#F3ECE2)."
+    ],
+    "donts": [
+      "**Don't** add stat-card tiles or KPI boxes; totals belong inside the page they count, as the day page does.",
+      "**Don't** add drop shadows; the book is flat.",
+      "**Don't** use radii larger than 10px or round a table.",
+      "**Don't** introduce a second typeface or proportional figures in numeric columns.",
+      "**Don't** use the clear red for anything but bounced, opt-out and remove actions, or Bordeaux for a failure state."
+    ]
+  }
+}

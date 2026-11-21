@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}LeadScout{% endblock %}</title>
+<link rel="preload" href="/static/fonts/mukta-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<aside class="rail">
+  <div class="brand">LeadScout</div>
+  <nav aria-label="Main">
+    <a href="/" {% if nav == 'today' %}aria-current="page"{% endif %}>Today <small>{{ sent_today }}/{{ cap }}</small></a>
+    <a href="/find" {% if nav == 'find' %}aria-current="page"{% endif %}>Find leads</a>
+    <a href="/pitches" {% if nav == 'pitches' %}aria-current="page"{% endif %}>Pitches <small>{{ counts.get('drafted', 0) }}</small></a>
+    <a href="/leads" {% if nav == 'leads' %}aria-current="page"{% endif %}>Leads <small>{{ counts.get('new', 0) + counts.get('drafted', 0) + counts.get('approved', 0) + counts.get('contacted', 0) + counts.get('replied', 0) }}</small></a>
+    <a href="/replies" {% if nav == 'replies' %}aria-current="page"{% endif %}>Replies <small>{{ counts.get('replied', 0) }}</small></a>
+    <a href="/deals" {% if nav == 'deals' %}aria-current="page"{% endif %}>Deals <small>{{ counts.get('won', 0) }}</small></a>
+    <a href="/sent" {% if nav == 'sent' %}aria-current="page"{% endif %}>Sent <small>{{ sent_total }}</small></a>
+    <a href="/leads?status=opted_out" {% if nav == 'optouts' %}aria-current="page"{% endif %}>Opt-outs <small>{{ counts.get('opted_out', 0) }}</small></a>
+  </nav>
+  <div class="foot">Sending as {{ cfg.sender.email }}</div>
+</aside>
+<main>
+{% block main %}{% endblock %}
+</main>
+</body>
+</html>

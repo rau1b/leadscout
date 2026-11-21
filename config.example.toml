@@ -1,0 +1,49 @@
+# Copy to config.toml (`leadscout init` does this) and fill in your details.
+# config.toml is gitignored because it holds your personal details.
+
+[sender]
+name = "Your Name"
+business = "Your Studio"
+city = "Hyderabad"
+phone = "+91 90000 00000"
+email = "yourname.outreach@gmail.com"   # the Gmail account LeadScout sends from
+portfolio = "https://yourname.github.io"
+
+[pitch]
+offer = "a free mockup of your new homepage"
+# Short line about what you do, used in every pitch.
+pitch_line = "I build fast, mobile-first websites for local businesses"
+
+[sending]
+# All times are IST.
+window_start = "10:00"
+window_end = "17:00"
+days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+min_gap_seconds = 180
+max_gap_seconds = 360
+# Daily cap for week 1, week 2, week 3 onward, counted from your first send.
+warmup = [15, 30, 50]
+followup_after_days = 4
+max_followups = 1
+# Sending pauses automatically if bounces in the last 40 emails pass this share.
+max_bounce_rate = 0.05
+
+[scoring]
+min_score = 40
+# Taxonomy names that are worth more (they can pay for a website).
+high_value = [
+    "dentist", "dental", "clinic", "physiotherapy", "dermatolog", "interior_design",
+    "real_estate", "architect", "coaching", "tutoring", "school", "educational",
+    "beauty_salon", "spa", "gym", "fitness", "lawyer", "legal", "accountant",
+    "event_planning", "wedding", "photograph", "hotel", "restaurant", "cafe",
+    "bakery", "boutique", "jewelry", "furniture", "car_dealer", "travel",
+]
+# Never pitch these.
+excluded = [
+    "bank", "atm", "place_of_worship", "temple", "mosque", "church", "historic",
+    "government", "police", "post_office", "public_", "park", "monument",
+    "bus_station", "train_station", "airport", "embassy", "cemetery",
+]
+
+[retention]
+purge_uncontacted_after_days = 90

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ r.name }} · LeadScout{% endblock %}
+{% block main %}
+<a class="back" id="backlink" href="/leads"><svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to Leads</span></a>
+<div class="head">
+  <h1>{{ r.name }}</h1>
+  <span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span>
+  <span class="meta">Score {{ r.score }}</span>
+</div>
+
+{% if msg %}<p class="note" role="alert">{{ msg }}</p>{% endif %}
+{% if saved == 'approve' %}<p class="note" role="status">Saved and approved. It's queued for sending.</p>
+{% elif saved == 'save' %}<p class="note" role="status">Pitch saved.</p>
+{% elif saved == 'drafted' %}<p class="note" role="status">Drafted from the template. Read it, edit, then approve.</p>
+{% elif saved == 'replied' %}<p class="note" role="status">Reply sent from Gmail, in the same thread.</p>
+{% elif saved == 'deal' %}<p class="note" role="status">Deal saved.</p>
+{% elif saved == 'optout' %}<p class="note" role="status">Opted out. LeadScout will never contact this email or phone again.</p>{% endif %}
+
+<div class="lead">
+  <div>
+    {% if convo %}
+    <section class="editor convo" id="reply">
+      <h2>Conversation</h2>
+      {% for m in convo %}
+      <article class="msg msg-{{ m.kind }}">
+        <p class="msg-head"><strong>{{ m.from_addr }}</strong> <span class="hint">{{ m.received_at|day }} {{ m.received_at|hm }}</span>
+          {% if m.kind != 'replied' %}<span class="st st-{{ m.kind }}">{{ status_labels[m.kind] }}</span>{% endif %}</p>
+        <div class="msg-body">{{ m.body }}</div>
+      </article>
+      {% endfor %}
+      {% if r.status not in ('opted_out', 'bounced') %}
+      <form method="post" action="/leads/{{ r.id }}/reply" class="replyform">
+        <div class="field">
+          <label for="replybody">Your reply</label>
+          <div class="quick" role="group" aria-label="Start from a ready answer">
+            {% for name, text in quick.items() %}
+            <button type="button" class="btn quiet small" data-text="{{ text }}" onclick="document.getElementById('replybody').value=this.dataset.text;document.getElementById('replybody').focus()">{{ name }}</button>
+            {% endfor %}
+          </div>
+          <textarea id="replybody" name="body" rows="9" required></textarea>
+          <p class="hint">Pick a ready answer, then edit it. Anything in [square brackets] must be filled in before it sends.</p>
+        </div>
+        <div class="bar"><button class="btn">Send reply</button><span class="hint">Sends from your Gmail, in the same thread.</span></div>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="editor">
+      {% if convo %}<details><summary><h2>Original pitch</h2></summary>{% else %}<h2>Pitch</h2>{% endif %}
+      {% if r.subject %}
+      <form method="post" action="/leads/{{ r.id }}/pitch">
+        <div class="field"><label for="subject">Subject</label><input id="subject" type="text" name="subject" value="{{ r.subject }}" maxlength="120" required></div>
+        <div class="field"><label for="body">Email</label><textarea id="body" name="body" rows="14" required>{{ r.body }}</textarea></div>
+        <div class="field"><label for="whatsapp">WhatsApp message</label><textarea id="whatsapp" name="whatsapp" rows="5" maxlength="600" style="min-height:120px">{{ r.whatsapp or '' }}</textarea>
+          <p class="hint">Up to 600 characters. You send this yourself from WhatsApp; LeadScout never sends it.</p></div>
+        <div class="bar">
+          {% if r.email and r.status in ('new', 'drafted') %}<button class="btn" name="action" value="approve">Save and approve</button>{% endif %}
+          <button class="btn quiet" name="action" value="save">Save</button>
+          <span class="hint">{% if r.pitch_source == 'claude' %}Written by Claude{% elif r.pitch_source == 'edited' %}Edited by you{% else %}From the template{% endif %}</span>
+        </div>
+      </form>
+      {% else %}
+      <p class="empty"><strong>No pitch yet.</strong>Draft one from the template, then edit it here.</p>
+      <form method="post" action="/leads/{{ r.id }}/draft"><button class="btn">Draft pitch</button></form>
+      {% endif %}
+      {% if convo %}</details>{% endif %}
+    </section>
+  </div>
+
+  <div class="side">
+    {% if r.status in ('contacted', 'replied', 'won', 'lost') or deal.quote_inr or deal.paid_inr %}
+    <section id="deal">
+      <h2>Deal</h2>
+      <form method="post" action="/leads/{{ r.id }}/deal">
+        <div class="money">
+          <div class="field"><label for="quote_inr">Quoted (₹)</label><input id="quote_inr" type="text" inputmode="numeric" name="quote_inr" value="{{ deal.quote_inr or '' }}" placeholder="e.g. 15000"></div>
+          <div class="field"><label for="paid_inr">Paid so far (₹)</label><input id="paid_inr" type="text" inputmode="numeric" name="paid_inr" value="{{ deal.paid_inr or '' }}" placeholder="e.g. 7500"></div>
+        </div>
+        <div class="field"><label for="deal_note">Note</label><input id="deal_note" type="text" name="deal_note" value="{{ deal.deal_note or '' }}" placeholder="e.g. 50% advance, rest on launch"></div>
+        <div class="bar">
+          <button class="btn small" name="status" value="">Save</button>
+          {% if r.status != 'won' %}<button class="btn quiet small" name="status" value="won">Save as won</button>{% endif %}
+          {% if r.status not in ('lost',) %}<button class="btn quiet small" name="status" value="lost">Mark lost</button>{% endif %}
+          {% if r.status == 'contacted' %}<button class="btn quiet small" name="status" value="replied">They replied</button>{% endif %}
+        </div>
+        {% if deal.won_at %}<p class="hint">Won on {{ deal.won_at|day }}.</p>{% endif %}
+      </form>
+    </section>
+    {% endif %}
+    <section>
+      <h2>Why it's a lead</h2>
+      <ul class="why">{% for why in reasons %}<li>{{ why }}</li>{% endfor %}</ul>
+    </section>
+    <section class="facts">
+      <h2>Business</h2>
+      <dl>
+        <dt>Category</dt><dd>{{ r.category|nicecat }}</dd>
+        {% if r.area %}<dt>Found in</dt><dd><a href="/leads?area={{ r.area|urlencode }}">{{ r.area }}</a></dd>{% endif %}
+        {% if r.address or r.locality %}<dt>Address</dt><dd>{{ r.address or '' }}{% if r.locality %}, {{ r.locality }}{% endif %}</dd>{% endif %}
+        <dt>Email</dt><dd>{% if r.email %}<a href="mailto:{{ r.email }}?subject={{ (r.subject or '')|urlencode }}&body={{ (r.body or '')|urlencode }}">{{ r.email }}</a>{% else %}None found{% endif %}</dd>
+        <dt>Phone</dt><dd>{{ r.phone or 'None found' }}{% if r.phone_type %} ({{ r.phone_type }}){% endif %}</dd>
+        <dt>Website</dt><dd>{% if r.website %}<a href="{{ r.website if '://' in r.website else 'http://' ~ r.website }}" target="_blank" rel="noopener">{{ r.website }}</a>{% else %}None{% endif %}</dd>
+        <dt>Site check</dt><dd>{{ site_labels.get(r.site_class, r.site_class) }}{% if r.fetch_error == 'dns' %}, domain doesn't resolve{% elif r.fetch_error %}, {{ r.fetch_error }}{% endif %}</dd>
+        {% if r.perf_score is not none %}<dt>Speed score</dt><dd>{{ r.perf_score }}/100{% if r.lcp_s %}, main content in {{ r.lcp_s }}s on mobile{% endif %}</dd>{% endif %}
+        {% if r.generator %}<dt>Built with</dt><dd>{{ r.generator }}</dd>{% endif %}
+        {% if r.copyright_year %}<dt>Footer year</dt><dd>{{ r.copyright_year }}</dd>{% endif %}
+        <dt>Source</dt><dd>{{ 'Overture Maps' if r.source == 'overture' else 'Your import' }}</dd>
+      </dl>
+      {% if r.status in ('new', 'drafted', 'approved', 'excluded') %}
+      <form method="post" action="/leads/{{ r.id }}/hide" class="bar">
+        <button class="btn quiet small">Wrong category, hide</button>
+      </form>
+      {% elif r.status == 'hidden' %}
+      <form method="post" action="/leads/{{ r.id }}/unhide" class="bar">
+        <button class="btn quiet small">Show this lead again</button>
+      </form>
+      {% endif %}
+    </section>
+    <section>
+      <h2>Reach them</h2>
+      <div class="stack">
+        {% set wa = wa_link(r) %}
+        {% if wa and r.status not in ('opted_out', 'bounced') %}<a class="btn quiet" href="{{ wa }}" target="_blank" rel="noopener">Open WhatsApp chat</a>
+        <p class="hint">Manual only, at most 15 to 20 new chats a day, from a separate number.</p>
+        {% elif r.phone %}<p class="hint">Landline number: no WhatsApp link. Call only after they reply.</p>{% endif %}
+        {% if r.status != 'opted_out' %}
+        <form method="post" action="/leads/{{ r.id }}/optout" onsubmit="return confirm('Never contact {{ r.name|e }} again?')">
+          <button class="btn danger small">Opt out for good</button>
+        </form>
+        {% endif %}
+      </div>
+    </section>
+    {% if history %}
+    <section>
+      <h2>Emails sent</h2>
+      <ul class="why">{% for h in history %}<li>{{ h.sent_at|day }} {{ h.sent_at|hm }}: {{ {'followup': 'Follow-up', 'reply': 'Your reply'}.get(h.kind, 'First email') }} to {{ h.to_addr }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

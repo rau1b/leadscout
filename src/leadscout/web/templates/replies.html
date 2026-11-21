@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Replies · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Replies</h1>
+  <span class="meta">{% if last_check %}Inbox last checked {{ last_check|day }} at {{ last_check|hm }}{% else %}Inbox not checked yet{% endif %}</span>
+  <div class="actions">
+    <form method="post" action="/replies/check"><button class="btn">Check inbox</button></form>
+  </div>
+</div>
+{% if msg %}<p class="note" role="status">{{ msg }}</p>{% endif %}
+
+{% for r in rows %}
+<article class="pitch reply-row">
+  <div class="who">
+    <a href="/leads/{{ r.id }}#reply">{{ r.name }}</a>
+    <p>{{ r.category|nicecat }}{% if r.area %}, {{ r.area }}{% endif %}</p>
+    <p>{{ r.email }}</p>
+  </div>
+  <div>
+    <p class="subj">{{ r.last_at|day }} at {{ r.last_at|hm }}{% if r.n_replies > 1 %}, {{ r.n_replies }} messages{% endif %}</p>
+    <div class="body">{{ r.last_body }}</div>
+  </div>
+  <div class="act">
+    <span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span>
+    {% if r.answered_at and r.answered_at > r.last_at %}<span class="hint">You answered</span>
+    {% else %}<span class="hint waiting">Needs your answer</span>{% endif %}
+    <a class="btn small" href="/leads/{{ r.id }}#reply">Answer</a>
+  </div>
+</article>
+{% else %}
+<p class="empty"><strong>No replies yet.</strong>Press Check inbox to look for new ones. Replies also come in automatically while <code>leadscout send</code> is running.</p>
+{% endfor %}
+{% endblock %}

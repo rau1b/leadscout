@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Leads · LeadScout{% endblock %}
+{% block main %}
+<div class="head"><h1>{% if status == 'replied' %}Replies{% elif status == 'opted_out' %}Opt-outs{% elif status == 'hidden' %}Hidden leads{% else %}Leads{% endif %}{% if area %} in {{ area }}{% endif %}</h1><span class="meta">{{ rows|length }} shown</span></div>
+
+{% set tabs = [('active', 'Active'), ('new', 'New'), ('drafted', 'Drafted'), ('approved', 'Approved'), ('contacted', 'Contacted'), ('replied', 'Replied'), ('won', 'Won'), ('lost', 'Lost'), ('opted_out', 'Opted out'), ('excluded', 'Excluded'), ('hidden', 'Hidden'), ('all', 'All')] %}
+<nav class="tabs" aria-label="Filter by status">
+  {% for key, label in tabs %}
+  <a href="?status={{ key }}&q={{ q|urlencode }}&sort={{ sort }}&has_email={{ has_email }}&area={{ area|urlencode }}" {% if status == key %}aria-current="page"{% endif %}>{{ label }}{% if key in counts %}<small>{{ counts[key] }}</small>{% endif %}</a>
+  {% endfor %}
+</nav>
+<div class="filters">
+  <form method="get">
+    <input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="sort" value="{{ sort }}">
+    <label class="sr-only" for="area">Area</label>
+    <select id="area" name="area" onchange="this.form.submit()">
+      <option value="">All areas</option>
+      {% for a in areas %}<option value="{{ a.area }}" {% if a.area == area %}selected{% endif %}>{{ a.area }} ({{ a.n }})</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="q">Search</label>
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search name, category or area">
+    <label class="check"><input type="checkbox" name="has_email" value="1" {% if has_email %}checked{% endif %} onchange="this.form.submit()"> Has email</label>
+    <button class="btn quiet small">Search</button>
+  </form>
+</div>
+
+{% if rows %}
+<div class="tablewrap"><table>
+  <thead><tr>
+    <th><a href="?status={{ status }}&q={{ q|urlencode }}&has_email={{ has_email }}&area={{ area|urlencode }}&sort=name" {% if sort == 'name' %}aria-sort="ascending"{% endif %}>Business</a></th>
+    <th class="hide-sm">Category</th>{% if not area %}<th class="hide-sm">Searched area</th>{% endif %}<th>What's wrong</th>
+    <th class="num"><a href="?status={{ status }}&q={{ q|urlencode }}&has_email={{ has_email }}&area={{ area|urlencode }}&sort=score" {% if sort == 'score' %}aria-sort="descending"{% endif %}>Score</a></th>
+    <th class="hide-sm">Email</th><th>Status</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="n"><a href="/leads/{{ r.id }}">{{ r.name }}</a></td>
+    <td class="hide-sm">{{ r.category|nicecat }}</td>
+    {% if not area %}<td class="hide-sm nowrap">{{ r.area or r.locality or '' }}</td>{% endif %}
+    <td>{{ r|headline }}</td>
+    <td class="sc">{{ r.score }}</td>
+    <td class="em hide-sm">{{ r.email or '' }}</td>
+    <td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty"><strong>No leads match.</strong>{% if q %}Try a shorter search, or switch to All.{% else %}Search a new area on the <a href="/find">Find leads</a> page.{% endif %}</p>
+{% endif %}
+{% endblock %}

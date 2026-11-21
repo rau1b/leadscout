@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Find leads · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Find leads</h1>
+  <span class="meta">Search one area at a time. A neighbourhood gives a few hundred businesses, about a week of emails.</span>
+</div>
+
+{% if error %}<p class="note" role="alert">{{ error }}</p>{% endif %}
+
+<div class="find">
+  <form class="finder" method="post" action="/find">
+    <div class="field">
+      <label for="city">City or town</label>
+      <div class="combo">
+        <input id="city" type="text" name="city" placeholder="Start typing, e.g. Margao, Warangal, Hyderabad" required autocomplete="off"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="city-list">
+        <ul id="city-list" role="listbox" class="combo-list" hidden></ul>
+      </div>
+      <input type="hidden" name="place_id" id="place_id">
+      <p class="hint" id="city-picked" aria-live="polite">Any city, town or large village in India. Pick one from the list so the right state is used.</p>
+    </div>
+    <div class="field">
+      <label for="neighbourhood">Neighbourhood <span class="opt">optional</span></label>
+      <input id="neighbourhood" type="text" name="neighbourhood" placeholder="e.g. Kukatpally, Madhapur, Koramangala">
+      <p class="hint">Leave empty to search the centre of the city or town.</p>
+    </div>
+    <fieldset class="field types">
+      <legend>Business types</legend>
+      {% for key, (label, terms) in types.items() %}
+      <label class="check"><input type="checkbox" name="types" value="{{ key }}" {% if key in ('dental', 'interior', 'realestate', 'coaching') %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <div class="field">
+      <label for="extra">Something else <span class="opt">optional</span></label>
+      <input id="extra" type="text" name="extra" placeholder="e.g. pet shop, driving school">
+    </div>
+    <div class="bar">
+      <button class="btn">Find businesses</button>
+      <span class="hint">Takes 1 to 5 minutes. You can leave this page; it keeps running.</span>
+    </div>
+    {% if not has_key %}<p class="hint keynote">No PageSpeed key yet, so working sites get checked without a speed score. Add a free key to <code>.env</code> and run <code>leadscout pagespeed</code> later.</p>{% endif %}
+  </form>
+
+  <section class="block searched" aria-labelledby="searched-h">
+    <h2 id="searched-h">Areas searched</h2>
+    {% include "_areas.html" %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+<div id="areas" {% if areas|selectattr('status', 'in', ['queued', 'running'])|list %}hx-get="/find/list" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if areas %}
+<div class="tablewrap"><table>
+  <thead><tr><th>Area</th><th class="hide-sm">Searched for</th><th>Progress</th><th class="num">Leads</th><th class="num hide-sm">With email</th><th class="num hide-sm">Emailed</th></tr></thead>
+  <tbody>
+  {% for a in areas %}
+  {% set names = (a.categories|fromjson).names %}
+  <tr>
+    <td class="n">{% if a.status == 'done' %}<a href="/leads?area={{ a.label|urlencode }}">{{ a.label }}</a>{% else %}{{ a.label }}{% endif %}
+      {% if a.resolved %}<span class="where">{{ a.resolved }}</span>{% endif %}</td>
+    <td class="hide-sm types-cell">{{ names|join(', ') }}</td>
+    <td>
+      {% if a.status == 'done' %}<span class="st st-replied">Done</span>
+      {% elif a.status == 'failed' %}<span class="st st-bounced">Failed</span> <span class="hint">{{ a.message }}</span>
+      {% else %}<span class="st st-contacted">{{ 'Running' if a.status == 'running' else 'Waiting' }}</span> <span class="hint">{{ a.message }}</span>{% endif %}
+    </td>
+    <td class="sc">{{ a.leads if a.status == 'done' else '' }}</td>
+    <td class="num hide-sm">{{ a.with_email if a.status == 'done' else '' }}</td>
+    <td class="num hide-sm">{{ a.emailed if a.status == 'done' else '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty"><strong>No areas searched from here yet.</strong>Pick a city and the kinds of business you want, then press Find businesses.</p>
+{% endif %}
+</div>

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Sent · LeadScout{% endblock %}
+{% block main %}
+<div class="head"><h1>Sent</h1><span class="meta">Every email LeadScout sent, newest first</span></div>
+{% if rows %}
+<div class="tablewrap"><table>
+  <thead><tr><th>Date</th><th>Time</th><th>Business</th><th>Type</th><th class="hide-sm">To</th><th>Status now</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.sent_at|day }}</td><td>{{ r.sent_at|hm }}</td>
+    <td class="n"><a href="/leads/{{ r.business_id }}">{{ r.name }}</a></td>
+    <td>{% if r.kind == 'followup' %}Follow-up{% else %}First email{% endif %}</td>
+    <td class="em hide-sm">{{ r.to_addr }}</td>
+    <td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty"><strong>Nothing sent yet.</strong>Connect Gmail with <code>leadscout gmail-login</code>, approve some pitches, then run <code>leadscout send</code> during the sending window.</p>
+{% endif %}
+{% endblock %}

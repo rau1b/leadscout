@@ -1,0 +1,22 @@
+<article class="pitch {% if r.status == 'approved' %}done{% endif %}" id="p-{{ r.id }}">
+  <div class="who">
+    <a href="/leads/{{ r.id }}">{{ r.name }}</a>
+    <p>{{ r.category|nicecat }}{% if r.locality %}, {{ r.locality }}{% endif %}</p>
+    <p>{{ r.email or 'No email: WhatsApp or visit' }}</p>
+    <p class="fact">{{ r|headline }}</p>
+  </div>
+  <div>
+    <div class="subj">{{ r.subject }}</div>
+    <div class="body">{{ r.body }}</div>
+  </div>
+  <div class="act">
+    <span class="st st-{{ r.status }}" aria-live="polite">{{ status_labels[r.status] }}</span>
+    {% if r.status == 'approved' %}
+    <button class="btn quiet small" hx-post="/leads/{{ r.id }}/unapprove" hx-target="#p-{{ r.id }}" hx-swap="outerHTML">Undo approval</button>
+    {% elif r.email %}
+    <button class="btn small" hx-post="/leads/{{ r.id }}/approve" hx-target="#p-{{ r.id }}" hx-swap="outerHTML">Approve</button>
+    {% endif %}
+    <a class="btn quiet small" href="/leads/{{ r.id }}">Edit</a>
+    <form method="post" action="/leads/{{ r.id }}/hide"><input type="hidden" name="back" value="/pitches"><button class="btn quiet small linkish" title="Hide leads that aren't really this kind of business">Wrong category</button></form>
+  </div>
+</article>

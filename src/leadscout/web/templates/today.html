@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Today · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Today</h1>
+  <span class="meta">{{ now.strftime('%A %d %B') }}, sending {{ cfg.sending.window_start }} to {{ cfg.sending.window_end }} IST, warm-up week {{ week }}</span>
+  <div class="actions">
+    {% if counts.get('drafted', 0) %}<a class="btn" href="/pitches">Review {{ counts.get('drafted', 0) }} pitches</a>{% endif %}
+  </div>
+</div>
+
+<div class="today">
+  <section class="page" aria-labelledby="page-h">
+    <h2 id="page-h">Today's page <b>{{ sent_today }} / {{ cap }}</b></h2>
+    <p class="when">{% if not open_now %}Window closed. Sending resumes at {{ cfg.sending.window_start }}.{% elif queue %}Next up: {{ queue[0].name }}, while <code>leadscout send</code> runs. Window closes {{ cfg.sending.window_end }}.{% else %}Window open until {{ cfg.sending.window_end }}. Nothing queued.{% endif %}</p>
+    <ol class="slots">
+      {% for s in sent %}
+      <li><time>{{ s.sent_at|hm }}</time><a href="/leads/{{ s.id }}">{{ s.name }}{% if s.kind == 'followup' %} (follow-up){% endif %}</a></li>
+      {% endfor %}
+      {% for q in queue[: (cap - sent|length) if cap > sent|length else 0] %}
+      <li class="f"><time>queued</time><a href="/leads/{{ q.id }}">{{ q.name }}</a></li>
+      {% endfor %}
+      {% for _ in range(cap - sent|length - queue|length) if cap > sent|length + queue|length %}
+      <li class="next"><time></time>{% if loop.first %}{% if counts.get('drafted', 0) %}approve pitches to fill{% else %}empty{% endif %}{% endif %}</li>
+      {% endfor %}
+    </ol>
+    {% if carry %}<p class="close">{{ carry }} approved carry to tomorrow</p>
+    {% elif sent|length >= cap %}<p class="close">Page full for today</p>
+    {% else %}<p class="close">{{ [cap - sent|length - queue|length, 0]|max }} slots still open</p>{% endif %}
+    <p class="hint">Bounced {{ counts.get('bounced', 0) }}, opted out {{ counts.get('opted_out', 0) }}. Sending pauses if bounces pass {{ (cfg.sending.max_bounce_rate * 100)|int }}%.</p>
+  </section>
+
+  <div>
+    {% if replies %}
+    <section class="block">
+      <h2>Replies waiting <small>answer these first</small></h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Business</th><th>What's wrong</th><th class="hide-sm">Email</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for r in replies %}
+        <tr><td class="n"><a href="/leads/{{ r.id }}">{{ r.name }}</a></td><td>{{ r|headline }}</td><td class="em hide-sm">{{ r.email }}</td><td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+    {% endif %}
+
+    <section class="block">
+      <h2>Queued to send <small>{{ queue|length }} approved</small></h2>
+      {% if queue %}
+      <div class="tablewrap"><table>
+        <thead><tr><th>Business</th><th>What's wrong</th><th class="num">Score</th><th class="hide-sm">Email</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for r in queue %}
+        <tr><td class="n"><a href="/leads/{{ r.id }}">{{ r.name }}</a></td><td>{{ r|headline }}</td><td class="sc">{{ r.score }}</td><td class="em hide-sm">{{ r.email }}</td><td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <p class="empty"><strong>Nothing approved yet.</strong>Approve pitches on the Pitches page and they'll queue here for today's sends.</p>
+      {% endif %}
+    </section>
+
+    <section class="block">
+      <h2>Waiting for your review <small>{{ counts.get('drafted', 0) }} drafted</small></h2>
+      {% if drafted %}
+      <div class="tablewrap"><table>
+        <thead><tr><th>Business</th><th class="hide-sm">Category</th><th>What's wrong</th><th class="num">Score</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for r in drafted %}
+        <tr><td class="n"><a href="/leads/{{ r.id }}">{{ r.name }}</a></td><td class="hide-sm">{{ r.category|nicecat }}</td><td>{{ r|headline }}</td><td class="sc">{{ r.score }}</td><td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <p class="empty"><strong>No pitches drafted.</strong>Run <code>leadscout pitch --templates 50</code>, or <code>leadscout pitch --prepare 50</code> and then <code>/pitch-today</code> in Claude Code.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

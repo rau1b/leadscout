@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Pitches · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Pitches to review</h1>
+  <span class="meta">{{ rows|length }} drafted. Approved pitches queue for sending.</span>
+  {% if rows or area %}
+  <div class="actions">
+    <form method="get" action="/pitches">
+      <label class="sr-only" for="area">Area</label>
+      <select id="area" name="area" onchange="this.form.submit()">
+        <option value="">All areas</option>
+        {% for a in areas %}<option value="{{ a.area }}" {% if a.area == area %}selected{% endif %}>{{ a.area }} ({{ a.n }})</option>{% endfor %}
+      </select>
+    </form>
+    <form method="post" action="/pitches/approve-all" onsubmit="return confirm('Approve every drafted pitch {% if area %}in {{ area|e }} {% endif %}that has an email address?')">
+      <input type="hidden" name="area" value="{{ area }}">
+      <button class="btn quiet">Approve all with email</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% for r in rows %}
+  {% include "_pitch_card.html" %}
+{% else %}
+<p class="empty"><strong>Nothing to review.</strong>Draft pitches with <code>leadscout pitch --templates 50</code>, or prepare them for Claude Code with <code>leadscout pitch --prepare 50</code> and run <code>/pitch-today</code>.</p>
+{% endfor %}
+{% endblock %}

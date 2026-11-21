@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Deals · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Deals</h1>
+  <span class="meta">{{ t.won }} won worth {{ t.won_value|inr or '₹0' }}, {{ t.paid|inr or '₹0' }} received, {{ t.due|inr or '₹0' }} still due{% if t.talking %}. {{ t.talking }} in talks{% if t.talking_value %} worth {{ t.talking_value|inr }}{% endif %}{% endif %}.</span>
+</div>
+
+{% if rows %}
+<div class="tablewrap"><table>
+  <thead><tr><th>Business</th><th class="hide-sm">Area</th><th>Status</th><th class="num">Quoted</th><th class="num">Paid</th><th class="num">Due</th><th class="hide-sm">Note</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="n"><a href="/leads/{{ r.id }}#deal">{{ r.name }}</a></td>
+    <td class="hide-sm">{{ r.area or '' }}</td>
+    <td><span class="st st-{{ r.status }}">{{ status_labels[r.status] }}</span></td>
+    <td class="num">{{ r.quote_inr|inr }}</td>
+    <td class="num">{{ r.paid_inr|inr }}</td>
+    <td class="num">{% if r.status == 'won' and (r.quote_inr or 0) > (r.paid_inr or 0) %}{{ ((r.quote_inr or 0) - (r.paid_inr or 0))|inr }}{% endif %}</td>
+    <td class="hide-sm em">{{ r.deal_note or '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><th colspan="3">Total won</th><th class="num">{{ t.won_value|inr }}</th><th class="num">{{ t.paid|inr }}</th><th class="num">{{ t.due|inr }}</th><th class="hide-sm"></th></tr></tfoot>
+</table></div>
+{% else %}
+<p class="empty"><strong>No deals yet.</strong>When a business replies, open it and add what you quoted. Mark it won when they say yes, and record payments as they come in.</p>
+{% endif %}
+{% endblock %}
