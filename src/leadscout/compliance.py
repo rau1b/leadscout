@@ -1,11 +1,12 @@
 """Opt-out list, sending window and data retention (see docs/INDIA_RULES.md)."""
 
 import hashlib
+import json
 from datetime import datetime, time, timedelta
 
 import phonenumbers
 
-from leadscout.config import IST
+from leadscout.config import IST, data_dir
 from leadscout.db import jload, now
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -75,16 +76,35 @@ def opt_out(con, value: str, reason: str) -> int:
 def forget(con, value: str) -> int:
     """Delete every business holding this email/phone; keep only the hashed opt-out entry."""
     key = normalize(value)
-    rows = con.execute("select id, phone, emails from businesses").fetchall()
-    # Exact matches only: a substring test would also delete aa@shop.in when asked to forget a@shop.in.
-    ids = [r["id"] for r in rows if r["phone"] == key or key in {e.strip().lower() for e in jload(r["emails"])}]
-    ids += [r["business_id"] for r in con.execute("select business_id from leads where lower(email) = ?", (key,))]
-    ids = sorted(set(ids))
+    rows = con.execute(
+        """select b.id, b.phone, b.emails, a.found_emails, l.email from businesses b
+           left join audits a on a.business_id = b.id left join leads l on l.business_id = b.id"""
+    ).fetchall()
+
+    def holds(r) -> bool:
+        emails = {e.strip().lower() for e in jload(r["emails"]) + jload(r["found_emails"]) + [r["email"] or ""]}
+        return key in emails or (r["phone"] and normalize(r["phone"]) == key)
+
+    ids = {r["id"] for r in rows if holds(r)}
     for bid in ids:
         con.execute("delete from businesses where id = ?", (bid,))
     suppress(con, value, "forget request")
     con.commit()
+    _forget_in_pitch_files(ids)
     return len(ids)
+
+
+def _forget_in_pitch_files(ids: set[str]) -> None:
+    """Drop these businesses from the Claude Code hand-off files too (data/pitch_jobs.json, pitch_results*.json)."""
+    if not ids:
+        return
+    for path in data_dir().glob("pitch_*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("leads"), list):
+            data["leads"] = [x for x in data["leads"] if x.get("id") not in ids]
+        elif isinstance(data, list):
+            data = [x for x in data if not (isinstance(x, dict) and x.get("id") in ids)]
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def in_window(cfg_sending: dict, at: datetime | None = None) -> bool:

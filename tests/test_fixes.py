@@ -611,3 +611,28 @@ def test_pitch_only_mentions_the_speed_test_when_it_ran(cfg):
     assert "speed" not in templates.render(no_psi, cfg)["body"].lower()
     with_psi = {**no_psi, "perf_score": 31}
     assert "Google's free speed and mobile test" in templates.render(with_psi, cfg)["body"]
+
+
+# ---- 13. forget() matches exactly and cleans the pitch files -------------------------------
+
+def test_forget_matches_exactly_and_cleans_pitch_files(tmp_path, monkeypatch):
+    from leadscout.compliance import forget, is_suppressed
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    con = db.connect()
+    _business(con, "a", emails='["A@abc.in"]')
+    _business(con, "data", emails='["data@abc.in"]')
+    _business(con, "found")
+    con.execute("insert into audits (business_id, site_class, found_emails, audited_at) values ('found', 'real', '[\"a@abc.in\"]', 'x')")
+    con.commit()
+    d = tmp_path / "data"
+    (d / "pitch_jobs.json").write_text(json.dumps({"sender": {}, "leads": [{"id": "a"}, {"id": "data"}]}), encoding="utf-8")
+    (d / "pitch_results.json").write_text(json.dumps([{"id": "a", "body": "x"}, {"id": "data", "body": "y"}]), encoding="utf-8")
+    (d / "pitch_results.imported.json").write_text(json.dumps([{"id": "found", "body": "z"}]), encoding="utf-8")
+
+    assert forget(con, "a@abc.in") == 2
+    left = [r[0] for r in con.execute("select id from businesses")]
+    assert left == ["data"] and is_suppressed(con, "a@abc.in")
+    assert [x["id"] for x in json.loads((d / "pitch_jobs.json").read_text(encoding="utf-8"))["leads"]] == ["data"]
+    assert [x["id"] for x in json.loads((d / "pitch_results.json").read_text(encoding="utf-8"))] == ["data"]
+    assert json.loads((d / "pitch_results.imported.json").read_text(encoding="utf-8")) == []
