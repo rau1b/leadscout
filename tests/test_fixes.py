@@ -394,3 +394,20 @@ def test_htmx_approve_still_works(web):
     assert client.post("/leads/b1/approve", headers=htmx).status_code == 200
     assert _status(con) == "approved"
     assert client.get("/pitches").status_code == 200  # GETs need no Origin
+
+
+LOCAL = {"Origin": "http://127.0.0.1:8000"}
+
+
+@pytest.mark.parametrize("back,goes_to", [
+    ("/leads?status=new", "/leads?status=new"),
+    ("//evil.com", "/leads/b1"),
+    ("/\evil.com", "/leads/b1"),
+    ("https://evil.com", "/leads/b1"),
+    ("", "/leads/b1"),
+])
+def test_hide_only_redirects_within_the_dashboard(web, back, goes_to):
+    client, con = web
+    _lead(con, status="new")
+    r = client.post("/leads/b1/hide", data={"back": back}, headers=LOCAL, follow_redirects=False)
+    assert r.headers["location"] == goes_to
