@@ -37,6 +37,12 @@ NO_WORDS = re.compile(
 )
 
 
+
+def is_opt_out(text: str) -> bool:
+    """True when a reply reads as a "no" or a request to stop (see NO_WORDS)."""
+    return bool(NO_WORDS.search((text or "")[:200]))
+
+
 def _token_path():
     return data_dir() / "gmail_token.json"
 
@@ -146,7 +152,7 @@ class Gmail:
                 "subject": headers.get("subject", ""),
                 "body": body,
                 "received_ms": int(m.get("internalDate", 0)),
-                "kind": "bounced" if bounced else ("opted_out" if NO_WORDS.search(body[:200]) else "replied"),
+                "kind": "bounced" if bounced else ("opted_out" if is_opt_out(body) else "replied"),
             })
         return out
 

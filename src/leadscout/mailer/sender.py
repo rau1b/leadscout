@@ -197,6 +197,8 @@ def check_replies(con, cfg, gmail) -> dict:
             if not cur.rowcount:
                 continue  # already saved
             counts[m["kind"]] += 1
+            if r["status"] == "won":
+                continue  # a paying customer: never auto-opt-out; the saved reply shows it, you decide
             # A first answer moves the lead on; a later "no" always wins.
             if m["kind"] in ("opted_out", "bounced") or r["status"] == "contacted":
                 con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (m["kind"], now(), r["business_id"]))

@@ -77,3 +77,54 @@ def test_pitch_editor_is_read_only_after_sending(web):
     con.commit()
     page = client.get("/leads/b1").text
     assert 'action="/leads/b1/pitch"' not in page and "readonly" in page
+
+
+# ---- 2. Opt-out detection ------------------------------------------------------------------
+
+@pytest.mark.parametrize("reply", [
+    "No", "no.", "No thanks", "No, thank you.", "Nope.", "Not interested, thanks", "Not interested",
+    "Nahi", "Nahin ji, thank you", "nahi chahiye", "No thanks, we already have a website.",
+    "Please unsubscribe me", "Remove me from your list", "Stop emailing me.", "Don't email me again",
+    "Do not contact us", "Hi, please stop sending these. Thanks",
+])
+def test_opt_out_replies(reply):
+    from leadscout.mailer.gmail import is_opt_out
+
+    assert is_opt_out(reply)
+
+
+# main deliberately errs towards opting out (losing a lead is cheaper than emailing someone who said no),
+# so borderline replies like "No, all good. Thanks!" or "Not interested in SEO. But a new site, yes."
+# count as opt-outs there. Only replies both rules agree on are pinned here.
+@pytest.mark.parametrize("reply", [
+    "No problem, please send the mockup", "Yes send it", "How much would it cost?", "No worries, call me tomorrow",
+    "Nothing to add, send the mockup", "",
+])
+def test_not_opt_out_replies(reply):
+    from leadscout.mailer.gmail import is_opt_out
+
+    assert not is_opt_out(reply)
+
+
+def _contacted(con, status):
+    _lead(con, status=status)
+    con.execute("insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values ('b1', 'email', 'first', 'owner@clinic.in', 'g1', 't1', '2026-11-20T10:00:00+05:30')")
+    con.commit()
+
+
+class InboxOnly:
+    def __init__(self, kind, body="Not interested"):
+        self.msgs = [{"id": "m1", "from": "owner@clinic.in", "subject": "Re", "body": body, "received_ms": 1795000000000, "kind": kind}]
+
+    def incoming(self, thread_id, me):
+        return self.msgs
+
+
+def test_won_lead_is_never_auto_opted_out(con, cfg):
+    from leadscout.compliance import is_suppressed
+    from leadscout.mailer import sender
+
+    _contacted(con, "won")
+    sender.check_replies(con, cfg, InboxOnly("opted_out"))
+    assert _status(con) == "won" and not is_suppressed(con, "owner@clinic.in")
+    assert con.execute("select count(*) from replies").fetchone()[0] == 1  # still saved for you to read

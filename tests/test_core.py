@@ -8,7 +8,7 @@ from leadscout.audit.site import check_html
 from leadscout.compliance import in_window, is_suppressed, normalize, suppress
 from leadscout.config import IST
 from leadscout.mailer import sender
-from leadscout.mailer.gmail import NO_WORDS
+from leadscout.mailer.gmail import NO_WORDS, is_opt_out
 from leadscout.pitch import templates
 from leadscout.sources.common import phone_info, pick_website
 
@@ -98,7 +98,7 @@ def test_warmup_cap(con, cfg):
      ("I don't need much, just a simple site", False), ("Is there no cheaper option?", False), ("Haan, bhejiye", False)],
 )
 def test_reply_no_detection(reply, is_no):
-    assert bool(NO_WORDS.search(reply)) is is_no
+    assert is_opt_out(reply) is is_no
 
 
 def test_template_uses_only_measured_facts(cfg):
