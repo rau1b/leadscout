@@ -15,6 +15,13 @@ def _ctx():
     return config.load(), db.connect()
 
 
+def _require_sender(cfg) -> None:
+    problem = config.sender_problem(cfg)
+    if problem:
+        typer.echo(problem, err=True)
+        raise typer.Exit(1)
+
+
 @app.command()
 def init():
     """Create config.toml from the example. Edit it with your details afterwards."""
@@ -115,6 +122,8 @@ def pitch(
     from leadscout.pitch import jobs
 
     cfg, con = _ctx()
+    if templates or prepare:
+        _require_sender(cfg)
     if templates:
         typer.echo(f"Drafted {jobs.draft_with_templates(con, cfg, templates)} pitches from templates.")
     elif prepare:
@@ -158,6 +167,7 @@ def send(dry_run: bool = typer.Option(False, help="Show what would be sent witho
     cfg, con = _ctx()
     gm = None
     if not dry_run:
+        _require_sender(cfg)
         gm = _gmail()
     sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo)
 

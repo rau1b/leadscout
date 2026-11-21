@@ -59,10 +59,25 @@ class Config:
         return os.environ.get("GOOGLE_API_KEY", "")
 
 
+EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.toml"
+
+
 def load() -> Config:
     _load_env()
     path = home() / "config.toml"
     if not path.exists():
-        path = Path(__file__).resolve().parents[2] / "config.example.toml"
+        path = EXAMPLE  # fine for browsing the dashboard; sender_problem() blocks drafting and sending
     with open(path, "rb") as f:
         return Config(tomllib.load(f))
+
+
+def sender_problem(cfg: Config) -> str | None:
+    """Why pitches can't be drafted or sent yet (they'd be signed "Your Name"), or None if [sender] is filled in."""
+    if not (home() / "config.toml").exists():
+        return "config.toml is missing. Run `leadscout init`, then fill in the [sender] section with your details."
+    with open(EXAMPLE, "rb") as f:
+        example = tomllib.load(f)["sender"]
+    left = [k for k in ("name", "business", "phone", "email", "portfolio") if cfg.sender.get(k) == example.get(k)]
+    if left:
+        return f"config.toml still has the example [sender] values for: {', '.join(left)}. Put your own details there first."
+    return None

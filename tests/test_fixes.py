@@ -468,3 +468,50 @@ def test_export_skips_suppressed_bounced_and_hidden(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     emails = [r["email"] for r in csv.DictReader(out.open(encoding="utf-8-sig"))]
     assert emails == ["keep@a.in"]
+
+
+# ---- 9. No pitches or sends signed "Your Name" ---------------------------------------------
+
+REAL_SENDER = """[sender]
+name = "Asha Rao"
+business = "Rao Web Studio"
+city = "Hyderabad"
+phone = "+91 98480 11111"
+email = "asha.outreach@gmail.com"
+portfolio = "https://asharao.in"
+"""
+
+
+def _write_config(home, sender=REAL_SENDER):
+    example = (config.Path(config.__file__).resolve().parents[2] / "config.example.toml").read_text(encoding="utf-8")
+    rest = example[example.index("[pitch]"):]
+    (home / "config.toml").write_text(sender + "\n" + rest, encoding="utf-8")
+
+
+def test_sender_problem(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    assert "leadscout init" in config.sender_problem(config.load())  # no config.toml: example values in use
+    _write_config(tmp_path, sender=(config.Path(config.__file__).resolve().parents[2] / "config.example.toml").read_text(encoding="utf-8").split("[pitch]")[0])
+    problem = config.sender_problem(config.load())
+    assert "name" in problem and "phone" in problem
+    _write_config(tmp_path)
+    assert config.sender_problem(config.load()) is None
+
+
+def test_cli_refuses_to_draft_or_send_with_example_sender(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from leadscout.cli import app
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    for args in (["pitch", "--templates", "5"], ["pitch", "--prepare", "5"], ["send"]):
+        result = CliRunner().invoke(app, args)
+        assert result.exit_code == 1 and "leadscout init" in result.output, args
+
+
+def test_dashboard_refuses_to_draft_with_example_sender(web):
+    client, con = web
+    _lead(con, status="new")
+    r = client.post("/leads/b1/draft", headers=LOCAL, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    assert con.execute("select count(*) from pitches").fetchone()[0] == 0

@@ -276,6 +276,9 @@ def draft_from_template(lead_id: str):
     con = db.connect()
     cfg = config.load()
     r = lead_row(lead_id)
+    problem = config.sender_problem(cfg)
+    if problem:
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(problem)}", status_code=303)
     jobs.save_pitch(con, lead_id, templates.render(dict(r), cfg), "template")
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}?saved=drafted", status_code=303)
