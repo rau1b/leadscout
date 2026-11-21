@@ -366,3 +366,31 @@ def test_names_never_land_inside_inline_javascript(web):
     for page in (client.get("/leads/b1").text, client.get("/pitches", params={"area": evil}).text):
         assert "return confirm(" not in page and "data-confirm=" in page
         assert "');alert(1)" not in page  # only the escaped form appears
+
+
+@pytest.mark.parametrize("headers,ok", [
+    ({"Origin": "http://127.0.0.1:8000"}, True),
+    ({"Origin": "http://localhost:8000"}, True),
+    ({"Referer": "http://127.0.0.1:8000/pitches?area=x"}, True),
+    ({"Origin": "https://evil.com"}, False),
+    ({"Origin": "http://127.0.0.1:9999"}, False),
+    ({"Origin": "null"}, False),
+    ({"Referer": "http://127.0.0.1:8000.evil.com/"}, False),
+    ({"Origin": "https://evil.com", "Referer": "http://127.0.0.1:8000/"}, False),
+    ({}, True),  # browsers always send Origin or Referer on a form POST; a bare request isn't cross-site
+])
+def test_posts_need_a_local_origin(web, headers, ok):
+    client, con = web
+    r = client.post("/pitches/approve-all", headers=headers, follow_redirects=False)
+    assert (r.status_code == 303) is ok and (r.status_code == 403) is (not ok)
+
+
+def test_htmx_approve_still_works(web):
+    client, con = web
+    _lead(con, status="drafted")
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'S', 'B', 'template', 0, 'x', 'x')")
+    con.commit()
+    htmx = {"HX-Request": "true", "Origin": "http://127.0.0.1:8000", "Referer": "http://127.0.0.1:8000/pitches"}
+    assert client.post("/leads/b1/approve", headers=htmx).status_code == 200
+    assert _status(con) == "approved"
+    assert client.get("/pitches").status_code == 200  # GETs need no Origin

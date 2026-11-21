@@ -46,8 +46,15 @@ async def local_only(request: Request, call_next):
     if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS:
         return PlainTextResponse("LeadScout only answers on 127.0.0.1.", status_code=403)
     if request.method not in ("GET", "HEAD", "OPTIONS"):
-        origin = request.headers.get("origin") or request.headers.get("referer")
-        if origin and urlsplit(origin).hostname not in LOCAL_HOSTS:
+        # Match scheme, host and port exactly: another app on this computer (a different port), a sandboxed
+        # page ("null") or a look-alike such as http://127.0.0.1:8000.evil.com must not pass.
+        port = request.scope["server"][1]
+        allowed = {f"http://{h}:{port}" for h in ("127.0.0.1", "localhost", "[::1]")}
+        origin = request.headers.get("origin")
+        if origin is None and request.headers.get("referer"):
+            parts = urlsplit(request.headers["referer"])
+            origin = f"{parts.scheme}://{parts.netloc}"
+        if origin is not None and origin not in allowed:
             return PlainTextResponse("Blocked a form sent from another website.", status_code=403)
     return await call_next(request)
 
