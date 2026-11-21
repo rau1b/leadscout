@@ -515,3 +515,42 @@ def test_dashboard_refuses_to_draft_with_example_sender(web):
     r = client.post("/leads/b1/draft", headers=LOCAL, follow_redirects=False)
     assert "msg=" in r.headers["location"]
     assert con.execute("select count(*) from pitches").fetchone()[0] == 0
+
+
+# ---- 10. Broken SSL certificates -----------------------------------------------------------
+
+def test_broken_certificate_is_recorded_not_hidden():
+    import asyncio
+
+    import httpx
+    import respx
+
+    from leadscout.audit.site import audit_site
+
+    html = '<html><head><meta name="viewport" content="width=device-width"></head><body>' + "Welcome " * 30 + \
+           '<a href="mailto:hi@clinic.in">mail</a></body></html>'
+
+    async def go():
+        async with httpx.AsyncClient() as client:
+            return await audit_site(client, "https://clinic.in")
+
+    with respx.mock:
+        respx.get("https://clinic.in").mock(side_effect=[
+            httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"),
+            httpx.Response(200, html=html),
+        ])
+        r = asyncio.run(go())
+    assert r["site_class"] == "real" and r["https"] == 0 and r["fetch_error"] == "bad_certificate"
+    assert r["viewport"] == 1 and r["found_emails"] == {"hi@clinic.in"}  # the page was still checked
+
+
+def test_broken_certificate_reason_and_pitch(cfg):
+    from leadscout.pitch import templates
+    from leadscout.scoring import site_need
+
+    a = {"site_class": "real", "fetch_error": "bad_certificate", "https": 0, "perf_score": 80, "lcp_s": 2.0,
+         "viewport": 1, "copyright_year": 2026, "has_whatsapp": 1, "has_tel": 1}
+    pts, why = site_need(a)
+    assert pts > 0 and any("security warning" in w for w in why) and not any("No HTTPS" in w for w in why)
+    body = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)["body"]
+    assert "browsers show a security warning" in body and "Not secure" not in body

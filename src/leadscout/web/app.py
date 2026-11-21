@@ -109,6 +109,8 @@ def headline(r) -> str:
         return "Instagram only" if "instagram" in w else "Facebook only" if "facebook" in w else "Social page only"
     if r["site_class"] != "real":
         return LABELS.get(r["site_class"], r["site_class"])
+    if r["fetch_error"] == "bad_certificate":
+        return "Security warning in browsers"
     if r["lcp_s"] and r["lcp_s"] > 4:
         return f"Loads in {r['lcp_s']}s on mobile"
     if r["perf_score"] is not None and r["perf_score"] < 50:

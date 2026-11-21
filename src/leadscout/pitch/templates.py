@@ -86,7 +86,9 @@ def problem(f: dict) -> tuple[str, str]:
         issues.append(f"it scores {f['perf_score']}/100 on Google's mobile speed test")
     if f.get("viewport") == 0:
         issues.append("it isn't built for mobile screens, so phone visitors have to pinch and zoom")
-    if not f.get("https"):
+    if f.get("fetch_error") == "bad_certificate":
+        issues.insert(0, "its security certificate is broken, so browsers show a security warning before the page opens")
+    elif not f.get("https"):
         issues.append("it has no HTTPS, so browsers mark it \"Not secure\"")
     if is_outdated(f.get("copyright_year")):
         issues.append(f"the footer still says © {f['copyright_year']}, which makes it look unmaintained")
