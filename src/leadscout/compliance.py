@@ -27,7 +27,9 @@ def _hash(value: str) -> str:
     return hashlib.sha256(normalize(value).encode()).hexdigest()
 
 
-def suppress(con, value: str, reason: str) -> None:
+def suppress(con, value: str | None, reason: str) -> None:
+    if not value:
+        return  # e.g. a bounce on a lead that has no email stored
     con.execute("insert or ignore into suppression(value_hash, reason, added_at) values(?, ?, ?)", (_hash(value), reason, now()))
     con.commit()
 

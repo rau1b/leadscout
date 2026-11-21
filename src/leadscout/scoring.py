@@ -104,6 +104,10 @@ class DuplicateFinder:
         return dup
 
 
+# Leads whose email address is in use: rescoring never clears it.
+IN_CONTACT = ("approved", "contacted", "replied", "won")
+
+
 def chain_domains(con, min_count: int = 3) -> set[str]:
     """Domains used by several listings are chains, hospitals or aggregators: skip them."""
     counts = Counter()
@@ -118,7 +122,7 @@ def score_all(con, cfg) -> dict:
     chains = chain_domains(con)
     rows = con.execute(
         """select b.*, a.site_class, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year,
-                  a.has_whatsapp, a.has_tel, a.found_emails, a.fetch_error, l.status as lead_status
+                  a.has_whatsapp, a.has_tel, a.found_emails, a.fetch_error, l.status as lead_status, l.email as lead_email
            from businesses b join audits a on a.business_id = b.id
            left join leads l on l.business_id = b.id"""
     ).fetchall()
@@ -132,6 +136,9 @@ def score_all(con, cfg) -> dict:
         site_domain = domain(r["website"])
         candidates = jload(r["emails"]) + jload(r["found_emails"])
         email = emailcheck.best_email(candidates, site_domain) if candidates else None
+        old_email = r["lead_email"]
+        if email is None and old_email and (r["lead_status"] in IN_CONTACT or emailcheck.is_deliverable(old_email) is None):
+            email = old_email  # never drop an address we're talking to, or one DNS just couldn't check right now
         excluded = None
         if any(x in cat for x in sc["excluded"]):
             excluded = "Category not worth pitching"

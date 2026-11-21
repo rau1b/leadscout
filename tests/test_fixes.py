@@ -230,9 +230,9 @@ def fake_dns(monkeypatch):
         raise outcome()
 
     monkeypatch.setattr(dns.resolver, "resolve", resolve)
-    emailcheck.domain_accepts_mail.cache_clear()
+    emailcheck._known.clear()
     yield answers
-    emailcheck.domain_accepts_mail.cache_clear()
+    emailcheck._known.clear()
 
 
 def test_email_with_empty_label_is_rejected_without_crashing(con, cfg, fake_dns):
@@ -303,3 +303,52 @@ def test_repeated_send_errors_stop_the_run(con, cfg, no_wait):
     sender.run(con, cfg, FlakyGmail(bad={"*"}), log=lambda m: None)
     statuses = [r[0] for r in con.execute("select status from leads order by business_id")]
     assert statuses.count("send_failed") == 3 and statuses.count("approved") == 2
+
+
+# ---- 5. A short internet drop never wipes lead emails --------------------------------------
+
+def test_dns_timeouts_are_unknown_and_not_cached(fake_dns):
+    import dns.exception
+
+    from leadscout import emailcheck
+
+    fake_dns["clinic.in"] = dns.exception.Timeout
+    assert emailcheck.domain_accepts_mail("clinic.in") is None
+    fake_dns["clinic.in"] = True  # back online
+    assert emailcheck.domain_accepts_mail("clinic.in") is True
+    assert emailcheck.domain_accepts_mail("gone.in") is False  # NXDOMAIN: definite, cached
+    fake_dns["gone.in"] = True
+    assert emailcheck.domain_accepts_mail("gone.in") is False
+
+
+@pytest.mark.parametrize("status", ["new", "approved", "contacted", "replied", "won"])
+def test_dns_outage_keeps_lead_emails(con, cfg, fake_dns, status):
+    import dns.exception
+
+    from leadscout.scoring import score_all
+
+    _lead(con, status=status)
+    con.execute("""update businesses set emails = '["owner@clinic.in"]'""")
+    con.commit()
+    fake_dns["clinic.in"] = dns.exception.Timeout
+    score_all(con, cfg)
+    assert con.execute("select email from leads").fetchone()[0] == "owner@clinic.in"
+
+
+@pytest.mark.parametrize("status,kept", [("new", False), ("approved", True), ("contacted", True), ("replied", True), ("won", True)])
+def test_dead_domain_only_clears_email_before_contact(con, cfg, fake_dns, status, kept):
+    from leadscout.scoring import score_all
+
+    _lead(con, status=status)  # clinic.in answers NXDOMAIN
+    con.execute("""update businesses set emails = '["owner@clinic.in"]'""")
+    con.commit()
+    score_all(con, cfg)
+    assert (con.execute("select email from leads").fetchone()[0] == "owner@clinic.in") is kept
+
+
+def test_suppression_handles_missing_values(con):
+    from leadscout.compliance import is_suppressed, suppress
+
+    suppress(con, None, "bounced")  # a lead without an email
+    assert not is_suppressed(con, None) and not is_suppressed(con, None, "")
+    assert con.execute("select count(*) from suppression").fetchone()[0] == 0
