@@ -7,6 +7,8 @@ Placeholders: {name} business, {sender} your name, {phone} your phone, {portfoli
 
 import re
 
+from leadscout.pitch.templates import signature
+
 DEFAULTS = {
     "Price": (
         "Thanks for getting back to me! A simple, mobile-friendly website for {name} with a WhatsApp button, "
@@ -41,8 +43,10 @@ def all_replies(cfg) -> dict[str, str]:
 
 def fill(text: str, lead: dict, cfg) -> str:
     s = cfg.sender
-    body = text.format(name=lead["name"], sender=s["name"], phone=s["phone"], portfolio=s["portfolio"])
-    return f"{body}\n\n{s['name']}\n{s['phone']}"
+    # A blank detail becomes a [bracket], so the dashboard makes you fill it in before sending.
+    body = text.format(name=lead["name"], sender=s.get("name") or s["business"],
+                       phone=s.get("phone") or "[your phone]", portfolio=s.get("portfolio") or "[link to your work]")
+    return f"{body}\n\n{signature(s).removeprefix('Regards,').strip()}"
 
 
 def unfilled(text: str) -> list[str]:

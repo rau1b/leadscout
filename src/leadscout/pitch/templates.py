@@ -1,8 +1,9 @@
 """Free, offline pitch templates. Every pitch names a real, measured problem for that business."""
 
+from leadscout import places
 from leadscout.audit.site import is_outdated
 
-OPT_OUT = "If this isn't useful, just reply \"no\" and I won't email again."
+OPT_OUT = "P.S. No worries if this isn't a good fit right now. Just reply \"no\" and I won't email you again."
 
 
 CATEGORY_PLURALS = {
@@ -115,7 +116,26 @@ def is_local(f: dict, home: str) -> bool:
     home = home.strip().lower()
     # Hyderabad and Secunderabad are one metro; treat twin names as local.
     twins = {"secunderabad": "hyderabad", "bangalore": "bengaluru", "bombay": "mumbai", "gurgaon": "gurugram", "new delhi": "delhi"}
-    return not city or twins.get(city, city) == twins.get(home, home)
+    if not city or twins.get(city, city) == twins.get(home, home):
+        return True
+    # Home can be a state (e.g. "Goa"): any town in that state is local.
+    if home in city.split():
+        return True
+    place = places.best_match(city)
+    return bool(place) and place["state"].strip().lower() == home
+
+
+def signature(s: dict) -> str:
+    """Sign-off from whichever sender details are filled in; blank ones are left out."""
+    studio = ", ".join(x for x in (s.get("business"), s.get("city")) if x)
+    lines = [s.get("name"), studio, s.get("phone"), s.get("portfolio")]
+    return "Regards,\n" + "\n".join(x for x in lines if x)
+
+
+def intro(s: dict) -> str:
+    """'Hi, I'm Asha from Shinnen Creative in Goa.' or, with no name, 'Hi, this is Shinnen Creative in Goa.'"""
+    where = f"{s['business']} in {s['city']}" if s.get("city") else s["business"]
+    return f"Hi, I'm {s['name']} from {where}." if s.get("name") else f"Hi, this is {where}."
 
 
 def location_line(f: dict, cfg) -> str:
@@ -136,11 +156,11 @@ def render(f: dict, cfg) -> dict:
         f"{prob}\n\n"
         f"{location_line(f, cfg)} Would you like {p['offer']}? No cost and no obligation; "
         "if you like it, we can talk about the rest.\n\n"
-        f"Regards,\n{s['name']}\n{s['business']}, {s['city']}\n{s['phone']}\n{s['portfolio']}\n\n"
+        f"{signature(s)}\n\n"
         f"{OPT_OUT}"
     )
     whatsapp = (
-        f"Hi, I'm {s['name']} from {s['business']} in {s['city']}. {prob} "
+        f"{intro(s)} {prob} "
         f"Would you like {p['offer']}? No cost. If not, just say no and I won't message again."
     )
     return {"subject": subject, "body": body, "whatsapp": whatsapp[:600]}
@@ -152,5 +172,5 @@ def followup(f: dict, cfg) -> tuple[str, str]:
         f"Re: {f['subject']}",
         f"Hi {f['name']} team,\n\nJust checking you saw my note below. Happy to send over "
         f"{cfg.pitch['offer']} for {f['name']} this week, free.\n\n"
-        f"Regards,\n{s['name']}\n{s['phone']}\n\n{OPT_OUT}",
+        f"{signature(s)}\n\n{OPT_OUT}",
     )

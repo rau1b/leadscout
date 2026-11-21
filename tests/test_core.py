@@ -20,7 +20,11 @@ def con(tmp_path):
 
 @pytest.fixture
 def cfg():
-    return config.load()
+    # Always the example config, so a user's own config.toml can't change test results.
+    import tomllib
+    from pathlib import Path
+    with open(Path(__file__).resolve().parents[1] / "config.example.toml", "rb") as f:
+        return config.Config(tomllib.load(f))
 
 
 @pytest.mark.parametrize(
@@ -241,3 +245,19 @@ def test_search_is_anchored_on_the_picked_place(con):
     assert xmin < 73.96 < xmax and ymin < 15.28 < ymax  # around Margao, Goa
     with pytest.raises(ValueError):
         searches.queue_search(con, "Nowheretown", "", ["dental"])
+
+
+def test_home_state_counts_its_towns_as_local():
+    for city in ("Madgaon", "margao goa", "Panaji", "goa"):
+        assert templates.is_local({"city": city}, "Goa"), city
+    assert not templates.is_local({"city": "Pune"}, "Goa")
+    assert not templates.is_local({"city": "Hyderabad"}, "Goa")
+
+
+def test_signature_skips_blank_sender_details(cfg):
+    cfg.sender.update(name="", phone="", portfolio="", business="Shinnen Creative", city="Goa")
+    f = {"name": "Cafe X", "category": "cafe", "city": "Panaji", "site_class": "none"}
+    p = templates.render(f, cfg)
+    assert "Regards,\nShinnen Creative, Goa\n\n" in p["body"] and "here in Goa" in p["body"]
+    assert p["whatsapp"].startswith("Hi, this is Shinnen Creative in Goa.")
+    assert "Your Name" not in p["body"] and "github" not in p["body"]

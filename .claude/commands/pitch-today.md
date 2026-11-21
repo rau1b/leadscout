@@ -12,11 +12,11 @@ Rules (from docs/INDIA_RULES.md):
 - Cite only the measured facts given. Never invent numbers, reviews, competitors or claims.
 - No fake urgency, no scare claims ("Google will remove you"), never pretend to be a customer or Google.
 - Say plainly who the sender is and that this is a paid service, with a free, no-obligation first step (the `offer`).
-- Plain text, under 120 words, no links except the sender's portfolio in the signature, no attachments.
+- Plain text, under 120 words, no links except the sender's portfolio in the signature (if one is set), no attachments.
 - Location: if the lead's `city` is the sender's city (Hyderabad and Secunderabad count as one), you may say "here in <city>". Otherwise say the sender is based in their city and works with businesses across India online. Never imply the sender is local when they are not. Mention the lead's neighbourhood (first part of `area`) when present.
 - Indian English, warm and direct. Address it to "<business name> team" unless a person's name is in the business name (e.g. "Dr. Teeth" stays as the business).
 - Subject: specific to their problem, under 60 characters, no clickbait, no ALL CAPS, no emoji.
-- End with the signature (sender name, business, city, phone, portfolio) and then `opt_out_line` exactly.
+- End with the signature built from the sender details that are filled in (name, business, city, phone, portfolio; leave out blank ones) and then `opt_out_line` exactly.
 - Also write a WhatsApp version (under 600 characters, same facts, ends with "If not, just say no and I won't message again.").
 
 Write the results to `data/pitch_results.json` as a JSON array:

@@ -70,7 +70,7 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         con.commit()
         return f"skipped {item['name']} (opted out)"
     s = cfg.sender
-    sender = f"{s['name']} <{s['email']}>"
+    sender = f"{s.get('name') or s['business']} <{s['email']}>"
     if item["kind"] == "followup":
         subject, body = templates.followup(item, cfg)
         if dry_run:
@@ -134,7 +134,7 @@ def send_reply(con, cfg, gmail, business_id: str, body: str) -> None:
     s = cfg.sender
     subject = r["subject"] if r["subject"].lower().startswith("re:") else f"Re: {r['subject']}"
     ref = gmail.message_id_header(r["gmail_id"])
-    res = gmail.send(r["email"], subject, body, f"{s['name']} <{s['email']}>", thread_id=r["thread_id"], in_reply_to=ref)
+    res = gmail.send(r["email"], subject, body, f"{s.get('name') or s['business']} <{s['email']}>", thread_id=r["thread_id"], in_reply_to=ref)
     con.execute(
         "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', 'reply', ?, ?, ?, ?)",
         (business_id, r["email"], res["id"], res["threadId"], now()),
