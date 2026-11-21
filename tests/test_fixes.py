@@ -687,3 +687,13 @@ def test_unhide_rescores_only_that_lead(web, monkeypatch):
     rows = dict(con.execute("select business_id, updated_at from leads").fetchall())
     assert rows["b2"] == "2026-11-20" and rows["b1"] != "2026-11-20"
     assert _status(con, "b1") in ("new", "excluded")
+
+
+# ---- Minor: stray braces in custom quick replies -------------------------------------------
+
+@pytest.mark.parametrize("text", ["Price is {price}", "Use {} here", "Curly { brace", "JSON: {\"a\": 1}", "{0}"])
+def test_quick_reply_with_stray_braces_falls_back_to_raw_text(cfg, text):
+    from leadscout.pitch import quick_replies
+
+    out = quick_replies.fill(text, {"name": "Smile"}, cfg)
+    assert out.startswith(text) and cfg.sender["name"] in out
