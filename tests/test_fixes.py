@@ -440,3 +440,31 @@ def test_expired_gmail_login_says_log_in_again(tmp_path, monkeypatch, creds):
     monkeypatch.setattr(gmail.Credentials, "from_authorized_user_file", lambda *a: creds)
     with pytest.raises(RuntimeError, match="gmail-login"):
         gmail.Gmail()
+
+
+# ---- 8. Export respects the suppression list -----------------------------------------------
+
+def test_export_skips_suppressed_bounced_and_hidden(tmp_path, monkeypatch):
+    import csv
+
+    from typer.testing import CliRunner
+
+    from leadscout.cli import app
+    from leadscout.compliance import suppress
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    con = db.connect()
+    _lead(con, "keep", status="new", email="keep@a.in")
+    _lead(con, "mail_out", status="new", email="gone@a.in")
+    _lead(con, "phone_out", status="new", email="other@a.in")
+    _lead(con, "bounced", status="bounced", email="b@a.in")
+    _lead(con, "hidden", status="hidden", email="h@a.in")
+    con.execute("update businesses set phone = '+919848022338' where id = 'phone_out'")
+    con.commit()
+    suppress(con, "GONE@a.in", "test")
+    suppress(con, "098480 22338", "test")
+    out = tmp_path / "leads.csv"
+    result = CliRunner().invoke(app, ["export", str(out)])
+    assert result.exit_code == 0, result.output
+    emails = [r["email"] for r in csv.DictReader(out.open(encoding="utf-8-sig"))]
+    assert emails == ["keep@a.in"]
