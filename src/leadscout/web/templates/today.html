@@ -12,7 +12,7 @@
 <div class="today">
   <section class="page" aria-labelledby="page-h">
     <h2 id="page-h">Today's page <b>{{ sent_today }} / {{ cap }}</b></h2>
-    <p class="when">{% if not open_now %}Window closed. Sending resumes at {{ cfg.sending.window_start }}.{% elif queue %}Next up: {{ queue[0].name }}{% if not sending %}, once you start sending{% endif %}. Window closes {{ cfg.sending.window_end }}.{% else %}Window open until {{ cfg.sending.window_end }}. Nothing queued.{% endif %}</p>
+    <p class="when">{% if not open_now %}Window closed. Sending resumes at {{ cfg.sending.window_start }}{% if us_waiting %} IST (US leads at 10:00 their time){% endif %}.{% elif queue %}Next up: {{ queue[0].name }}{% if not sending %}, once you start sending{% endif %}. Window closes {{ cfg.sending.window_end }}.{% else %}Window open until {{ cfg.sending.window_end }}. Nothing queued.{% endif %}</p>
     {% if msg %}<p class="note" role="status">{{ msg }}</p>{% endif %}
     {% include "_sending.html" %}
     <ol class="slots">

@@ -8,7 +8,7 @@ from leadscout.db import jload, now
 from leadscout.pitch import templates
 
 FACTS_SQL = """
-select b.id, b.name, b.category, b.locality, b.area, b.city, b.website, b.phone, b.phone_type,
+select b.id, b.name, b.category, b.locality, b.area, b.city, b.country, b.website, b.phone, b.phone_type,
        a.site_class, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year,
        a.has_whatsapp, a.has_tel, a.fetch_error, l.score, l.reasons, l.email
 from leads l join businesses b on b.id = l.business_id join audits a on a.business_id = b.id

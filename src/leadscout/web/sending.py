@@ -9,9 +9,9 @@ from collections import deque
 from datetime import datetime
 
 from leadscout import config, db
-from leadscout.compliance import in_window
 from leadscout.config import IST
 from leadscout.mailer import sender
+from leadscout.regions import any_open_now
 
 RUNNING_KEY = "dashboard_send_running"  # set while a dashboard run is going; left behind if the dashboard was closed mid-run
 
@@ -33,16 +33,27 @@ def stopping() -> bool:
     return running() and _stop.is_set()
 
 
+def window_open(con, cfg) -> bool:
+    """Is it sending hours for some lead waiting to be emailed (IST, or a US lead's own time)?"""
+    return any_open_now(cfg, sender.waiting_countries(con) or {"IN"})
+
+
 def block_reason(con, cfg) -> str:
     """Why sending can't start right now, in plain words; empty if it can."""
     sc = cfg.sending
-    if not in_window(sc):
-        return f"The sending window is closed. It opens at {sc['window_start']} IST on sending days."
+    waiting = sender.waiting_countries(con) or {"IN"}
+    if not window_open(con, cfg):
+        us = " (US leads: 10:00 their local time)" if "US" in waiting else ""
+        return f"The sending window is closed. It opens at {sc['window_start']} IST on sending days{us}."
     if sender.bounce_rate(con) > sc["max_bounce_rate"]:
         return "Paused: too many recent emails bounced. Check your lead emails before sending more."
     if sender.sent_today(con) >= sender.daily_cap(con, cfg):
         return "Today's cap is reached. Sending picks up tomorrow."
     if sender.next_item(con, cfg) is None:
+        if con.execute("select 1 from leads where status = 'approved' and email is not null").fetchone():
+            if "US" in waiting and not (cfg.sender.get("postal_address") or "").strip():
+                return "US emails need your postal address: add postal_address under [sender] in config.toml (US law)."
+            return "The approved emails left are waiting for their local sending hours."
         return "Nothing to send. Approve some pitches first."
     return ""
 

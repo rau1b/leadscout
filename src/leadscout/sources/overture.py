@@ -50,7 +50,8 @@ def matches(row: dict, terms: list[str]) -> bool:
     return any(t in hay for t in terms)
 
 
-def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confidence: float = 0.5, city: str | None = None) -> tuple[int, int]:
+def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confidence: float = 0.5, city: str | None = None,
+           country: str = "IN") -> tuple[int, int]:
     """Store matching places. Returns (places in area, places stored)."""
     places = download(bbox)  # noqa: F841 (read by duckdb below)
     duck = duckdb.connect()
@@ -87,6 +88,7 @@ def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confiden
                 "brand": r["brand"],
                 "area": area_label,
                 "city": city,
+                "country": country,
             },
         )
         stored += 1

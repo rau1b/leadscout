@@ -142,6 +142,8 @@ def intro(s: dict) -> str:
 def location_line(f: dict, cfg) -> str:
     """Honest about where you are: never claims to be local to a lead in another city."""
     s, p = cfg.sender, cfg.pitch
+    if f.get("country") == "US":
+        return f"{p['pitch_line']}. I'm based in {s['city']}, India, and work with US businesses remotely."
     if is_local(f, s["city"]):
         return f"{p['pitch_line']} here in {s['city']}."
     return f"{p['pitch_line']}. I'm based in {s['city']} and work with businesses across India, all online."
@@ -164,7 +166,16 @@ def render(f: dict, cfg) -> dict:
         f"{intro(s)} {prob} "
         f"Would you like {p['offer']}? No cost. If not, just say no and I won't message again."
     )
+    if f.get("country") == "US":
+        whatsapp = ""  # email only for the US: few US businesses use WhatsApp, and cold texts fall under the TCPA
     return {"subject": subject, "body": body, "whatsapp": whatsapp[:600]}
+
+
+def us_footer(cfg) -> str:
+    """CAN-SPAM: a US commercial email says it's an offer and carries a valid postal address. Added at send time,
+    so it's there whoever wrote the pitch."""
+    s = cfg.sender
+    return f"\n\n--\nThis is a business offer from {s['business']}, {s['postal_address'].strip()}."
 
 
 def followup(f: dict, cfg) -> tuple[str, str]:

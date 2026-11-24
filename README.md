@@ -3,7 +3,7 @@
 Finds Indian local businesses with no website or a weak one, audits them, drafts honest pitches, and sends the ones you approve from Gmail at a safe pace. Costs ₹0.
 
 - How it works: [docs/STACK.md](docs/STACK.md)
-- Outreach rules it follows: [docs/INDIA_RULES.md](docs/INDIA_RULES.md)
+- Outreach rules it follows: [docs/INDIA_RULES.md](docs/INDIA_RULES.md), and [docs/US_RULES.md](docs/US_RULES.md) for a small US test (pick USA on Find leads)
 
 ## First-time setup (Windows, PowerShell, in this folder)
 

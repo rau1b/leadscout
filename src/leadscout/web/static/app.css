@@ -248,6 +248,8 @@ td.em { color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: 
 fieldset.types { border: 0; padding: 0; margin: var(--s4) 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px var(--s3); }
 fieldset.types legend { font-weight: 600; font-size: 16px; margin-bottom: var(--s2); padding: 0; }
 fieldset.types .check { font-size: 16.5px; align-items: flex-start; line-height: 1.35; }
+fieldset.country { border: 0; padding: 0; margin: 0 0 var(--s4); display: flex; gap: var(--s5); }
+fieldset.country legend { font-weight: 600; font-size: 16px; margin-bottom: var(--s2); padding: 0; }
 fieldset.types input, .check input { accent-color: var(--ink); width: 16px; height: 16px; margin-top: 1px; flex: none; }
 .keynote { margin-top: var(--s4); }
 .searched { margin-top: 0; }
