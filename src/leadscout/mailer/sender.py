@@ -111,6 +111,48 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
     return f"sent {item['kind']} to {item['name']} <{item['email']}>"
 
 
+CLAIM_STALE_AFTER = timedelta(minutes=10)  # a live send takes seconds; a claim this old with no record was cut off
+
+
+def stuck_claims(con) -> list[dict]:
+    """Emails claimed but never recorded: the send was cut off, and they may or may not have gone out."""
+    cutoff = datetime.now(IST) - CLAIM_STALE_AFTER
+    out = []
+    for r in con.execute("select key, value from meta where key like 'sending:%'").fetchall():
+        bid, kind, n = r["key"][len("sending:"):].rsplit(":", 2)
+        n = int(n)
+        if kind == "first":
+            recorded = con.execute("select 1 from outreach where business_id = ? and kind = 'first'", (bid,)).fetchone()
+        else:
+            recorded = con.execute("select count(*) from outreach where business_id = ? and kind = 'followup'", (bid,)).fetchone()[0] > n
+        if recorded or datetime.fromisoformat(r["value"]) > cutoff:
+            continue
+        lead = con.execute("select b.name, l.email from leads l join businesses b on b.id = l.business_id where l.business_id = ?", (bid,)).fetchone()
+        if lead:
+            out.append({"key": r["key"], "business_id": bid, "kind": kind, "claimed_at": r["value"], "name": lead["name"], "email": lead["email"]})
+    return out
+
+
+def resolve_stuck(con, gmail) -> dict:
+    """Look each stuck email up in Gmail's Sent folder: record the ones that went out, free the rest to be sent."""
+    counts = {"recorded": 0, "released": 0}
+    for c in stuck_claims(con):
+        found = gmail.sent_to(c["email"], datetime.fromisoformat(c["claimed_at"]))
+        if found:
+            if c["kind"] == "first":
+                con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ? and status = 'approved'", (now(), c["business_id"]))
+            con.execute(
+                "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', ?, ?, ?, ?, ?)",
+                (c["business_id"], c["kind"], c["email"], found["id"], found["threadId"], c["claimed_at"]),
+            )
+            counts["recorded"] += 1
+        else:
+            con.execute("delete from meta where key = ?", (c["key"],))
+            counts["released"] += 1
+        con.commit()
+    return counts
+
+
 def check_replies(con, cfg, gmail) -> dict:
     """Save new replies and update lead status. Ongoing conversations are checked too, so later replies show up."""
     counts = {"replied": 0, "opted_out": 0, "bounced": 0}

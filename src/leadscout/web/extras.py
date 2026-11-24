@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from leadscout import config, db
 from leadscout.compliance import lead_is_suppressed
 from leadscout.db import now
-from leadscout.web.app import app, ctx, lead_row, tpl
+from leadscout.web.app import app, ctx, lead_row, sending_ctx, tpl
 
 # ---- Replies -------------------------------------------------------------------------------
 
@@ -78,6 +78,10 @@ def send_reply_route(lead_id: str, body: str = Form(...)):
 def send_start():
     from leadscout.web import sending
 
+    con = db.connect()
+    why = sending.block_reason(con, config.load())
+    if why:  # the button is disabled then, but check here too
+        return RedirectResponse(f"/?msg={quote(why)}", status_code=303)
     try:
         gm = _gmail()
     except ValueError as e:
@@ -92,6 +96,33 @@ def send_stop():
 
     sending.stop()
     return RedirectResponse(f"/?msg={quote('Stopping. Nothing more goes out after the email in hand.')}", status_code=303)
+
+
+@app.get("/send/status", response_class=HTMLResponse)
+def send_status(request: Request):
+    """The sending block alone, polled while a run is going. When the run ends, reload the page to update the slots."""
+    from leadscout.web import sending
+
+    con = db.connect()
+    resp = tpl.TemplateResponse(request, "_sending.html", {"request": request, **sending_ctx(con, config.load())})
+    if not sending.running():
+        resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
+@app.post("/send/resolve")
+def send_resolve():
+    from leadscout.mailer.sender import resolve_stuck
+
+    con = db.connect()
+    try:
+        counts = resolve_stuck(con, _gmail())
+    except ValueError as e:
+        return RedirectResponse(f"/?msg={quote(str(e))}", status_code=303)
+    except Exception:
+        return RedirectResponse(f"/?msg={quote('Could not reach Gmail. Nothing was changed; try again in a minute.')}", status_code=303)
+    msg = f"Checked Gmail: {counts['recorded']} had gone out and are now recorded, {counts['released']} had not and are back in the queue."
+    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
 
 
 # ---- Deals ---------------------------------------------------------------------------------

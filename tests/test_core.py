@@ -684,7 +684,7 @@ def test_dashboard_starts_and_stops_sending(client, home, monkeypatch):
 
     monkeypatch.setattr(sending.sender, "run", run)
     monkeypatch.setattr(extras, "_gmail", lambda: SendingGmail())
-    monkeypatch.setattr("leadscout.web.app.in_window", lambda sc: True)
+    monkeypatch.setattr(sending, "in_window", lambda sc: True)
     assert "Start sending" in client.get("/").text
     assert client.post("/send/start", follow_redirects=False).status_code == 303
     assert gate.wait(5) and sending.running()
@@ -703,5 +703,67 @@ def test_dashboard_send_needs_gmail_login(client, monkeypatch):
         raise ValueError("Run leadscout login first.")
 
     monkeypatch.setattr(extras, "_gmail", no_login)
+    monkeypatch.setattr(sending, "block_reason", lambda con, cfg: "")  # window open, something queued
     assert "Run leadscout login first." in client.post("/send/start").text
     assert not sending.running()
+
+
+class SentFolderGmail(SendingGmail):
+    def __init__(self, found):
+        super().__init__()
+        self.found = found
+
+    def sent_to(self, to, since):
+        return {"id": "g7", "threadId": "t7"} if self.found else None
+
+
+def _cut_off_claim(con, minutes_ago=30):
+    at = (datetime.now(IST) - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+    con.execute("insert into meta (key, value) values ('sending:b1:first:0', ?)", (at,))
+    con.commit()
+
+
+def test_cut_off_send_found_in_gmail_is_recorded(con, cfg):
+    _approved_first(con)
+    _cut_off_claim(con)
+    assert [c["name"] for c in sender.stuck_claims(con)] == ["Smile Dental"]
+    assert sender.resolve_stuck(con, SentFolderGmail(found=True)) == {"recorded": 1, "released": 0}
+    assert con.execute("select status from leads").fetchone()[0] == "contacted"
+    assert con.execute("select gmail_id, thread_id from outreach").fetchone()[:] == ("g7", "t7")
+    assert sender.stuck_claims(con) == [] and sender.next_item(con, cfg) is None
+
+
+def test_cut_off_send_missing_from_gmail_goes_back_in_queue(con, cfg):
+    _approved_first(con)
+    _cut_off_claim(con)
+    assert sender.resolve_stuck(con, SentFolderGmail(found=False)) == {"recorded": 0, "released": 1}
+    assert sender.next_item(con, cfg)["business_id"] == "b1"
+
+
+def test_a_send_in_progress_is_not_stuck(con):
+    _approved_first(con)
+    _cut_off_claim(con, minutes_ago=1)
+    assert sender.stuck_claims(con) == []
+
+
+def test_dashboard_refuses_to_start_outside_the_window(client, monkeypatch):
+    from leadscout.web import extras, sending
+
+    monkeypatch.setattr(sending, "in_window", lambda sc: False)
+    monkeypatch.setattr(extras, "_gmail", lambda: SendingGmail())
+    assert "sending window is closed" in client.post("/send/start").text
+    assert not sending.running()
+
+
+def test_dashboard_notes_a_run_cut_off_by_closing(home):
+    from leadscout.web import sending
+
+    db.set_meta(home, sending.RUNNING_KEY, "2026-11-24T11:05:00+05:30")
+    sending.note_cut_off_run(home)
+    assert "started at 11:05 ended when the dashboard closed" in sending.log[-1]
+    assert db.get_meta(home, sending.RUNNING_KEY) is None
+
+
+def test_send_status_reloads_the_page_when_the_run_ends(client):
+    r = client.get("/send/status")
+    assert r.status_code == 200 and r.headers["HX-Refresh"] == "true"

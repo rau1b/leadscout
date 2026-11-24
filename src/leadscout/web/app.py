@@ -23,7 +23,10 @@ HERE = Path(__file__).parent
 async def lifespan(_app):
     from leadscout.compliance import purge_if_due
 
+    from leadscout.web import sending
+
     purge_if_due(db.connect(), config.load())  # retention: drop never-contacted leads past the limit, once a day
+    sending.note_cut_off_run(db.connect())
     searches.start_worker()  # runs area searches queued from the Find leads page
     yield
 
@@ -133,10 +136,23 @@ def wa_link(r) -> str | None:
 tpl.env.globals["wa_link"] = wa_link
 
 
-@app.get("/", response_class=HTMLResponse)
-def today(request: Request, msg: str = ""):
+def sending_ctx(con, cfg) -> dict:
+    """What the Start/Stop sending block on the Today page needs."""
+    from leadscout.mailer.sender import stuck_claims
     from leadscout.web import sending
 
+    return {
+        "sending": sending.running(),
+        "stopping": sending.stopping(),
+        "send_log": list(sending.log),
+        "send_block": "" if sending.running() else sending.block_reason(con, cfg),
+        "stuck": stuck_claims(con),
+        "open_now": in_window(cfg.sending),
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+def today(request: Request, msg: str = ""):
     con = db.connect()
     cfg = config.load()
     day = today_ist().isoformat()
@@ -145,7 +161,9 @@ def today(request: Request, msg: str = ""):
            where o.channel = 'email' and o.kind != 'reply' and substr(o.sent_at, 1, 10) = ? order by o.sent_at""",
         (day,),
     ).fetchall()
-    queue = con.execute(LEAD_SQL + " where l.status = 'approved' order by l.score desc").fetchall()
+    send = sending_ctx(con, cfg)
+    held = {c["business_id"] for c in send["stuck"] if c["kind"] == "first"}  # waiting on a Gmail check, not queued
+    queue = [r for r in con.execute(LEAD_SQL + " where l.status = 'approved' order by l.score desc").fetchall() if r["id"] not in held]
     drafted = con.execute(LEAD_SQL + " where l.status = 'drafted' order by l.score desc limit 12").fetchall()
     replies = con.execute(LEAD_SQL + " where l.status = 'replied' order by l.updated_at desc").fetchall()
     cap = daily_cap(con, cfg)
@@ -163,13 +181,10 @@ def today(request: Request, msg: str = ""):
             replies=replies,
             carry=max(0, len(queue) - max(0, cap - len(sent))),
             week=week,
-            open_now=in_window(cfg.sending),
             now=datetime.now(IST),
             has_next=next_item(con, cfg) is not None,
             msg=msg,
-            sending=sending.running(),
-            stopping=sending.stopping(),
-            send_log=list(sending.log),
+            **send,
         ),
     )
 

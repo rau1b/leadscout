@@ -1,0 +1,21 @@
+<div id="sending" {% if sending %}hx-get="/send/status" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <div class="sendctl">
+    {% if stopping %}
+    <button class="btn quiet" disabled>Stopping…</button>
+    {% elif sending %}
+    <form method="post" action="/send/stop"><button class="btn danger">Stop sending</button></form>
+    <span class="hint">Sending. Keep the dashboard open.</span>
+    {% else %}
+    <form method="post" action="/send/start"><button class="btn"{% if send_block %} disabled{% if open_now %} aria-describedby="send-why"{% endif %}{% endif %}>Start sending</button></form>
+    {% if send_block and open_now %}<span class="hint" id="send-why">{{ send_block }}</span>{% endif %}{# window closed: the line above already says so #}
+    {% endif %}
+  </div>
+  {% if send_log %}<ol class="sendlog" aria-label="Sending log" aria-live="polite">{% for line in send_log %}<li>{{ line }}</li>{% endfor %}</ol>{% endif %}
+  {% if stuck %}
+  <div class="note stuck" role="status">
+    <p><b>{{ stuck|length }} email{{ 's' if stuck|length > 1 }} may have gone out without being recorded</b>, because sending was cut off mid-send. {{ 'They are' if stuck|length > 1 else 'It is' }} held back so nothing is sent twice.</p>
+    <ul>{% for c in stuck %}<li><a href="/leads/{{ c.business_id }}">{{ c.name }}</a>{% if c.kind == 'followup' %} (follow-up){% endif %}</li>{% endfor %}</ul>
+    <form method="post" action="/send/resolve"><button class="btn small quiet">Check Gmail's Sent folder</button></form>
+  </div>
+  {% endif %}
+</div>

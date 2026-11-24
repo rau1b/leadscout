@@ -9,6 +9,7 @@ One-time setup (no card needed):
 
 import base64
 import re
+from datetime import datetime
 from email.message import EmailMessage
 from email.utils import parseaddr
 
@@ -112,6 +113,16 @@ class Gmail:
             if sender and sender != my_address.lower() and headers.get("subject", "").strip().lower() == "unsubscribe":
                 out.add(sender)
         return out
+
+    def sent_to(self, to: str, since: datetime) -> dict | None:
+        """The newest email in Sent to this address since `since` (with a minute's slack), else None.
+
+        Raises on an API error, so a failed check is never mistaken for "not sent".
+        """
+        r = self.s.get(f"{API}/messages", params={"q": f"in:sent to:{to} after:{int(since.timestamp()) - 60}", "maxResults": 1})
+        r.raise_for_status()
+        msgs = r.json().get("messages", [])
+        return {"id": msgs[0]["id"], "threadId": msgs[0]["threadId"]} if msgs else None
 
     def incoming(self, thread_id: str, my_address: str) -> list[dict]:
         """Messages in a thread that were not sent by us, with their plain-text body (quoted history removed)."""

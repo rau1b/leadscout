@@ -310,3 +310,5 @@ tfoot th { border-top: 2px solid var(--text); border-bottom: 0; color: var(--tex
 .combo-empty { padding: 7px 12px; color: var(--muted); font-size: 16px; }
 #city-picked.ok { color: var(--green); font-weight: 600; }
 .where { display: block; font-weight: 400; color: var(--muted); font-size: 14.5px; }
+.stuck { margin-top: var(--s3); font-size: 15px; }
+.stuck ul { margin: var(--s1) 0 var(--s2); padding-left: var(--s4); }
