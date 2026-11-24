@@ -167,6 +167,13 @@ def _migrate(con) -> None:
     for col, kind in (("lat", "real"), ("lon", "real"), ("state", "text"), ("population", "integer"), ("resolved", "text")):
         if search_cols and col not in search_cols:
             con.execute(f"alter table searches add column {col} {kind}")
+    if search_cols:
+        # Older versions added a new row each time an area was searched again: keep only the latest finished one.
+        con.execute(
+            """delete from searches where status in ('done', 'failed') and id not in (
+                   select max(id) from searches
+                   group by coalesce(round(lat, 4) || ',' || round(lon, 4), lower(label)), lower(coalesce(neighbourhood, '')))"""
+        )
     lead_cols = {r[1] for r in con.execute("pragma table_info(leads)")}
     for col, kind in (("quote_inr", "integer"), ("paid_inr", "integer"), ("deal_note", "text"), ("won_at", "text")):
         if lead_cols and col not in lead_cols:

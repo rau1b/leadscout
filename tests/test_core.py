@@ -543,3 +543,69 @@ def test_site_fetch_is_capped():
 
     resp, text = asyncio.run(go())
     assert resp.status_code == 200 and len(text) == MAX_BYTES
+
+
+# ---- One place, one entry ------------------------------------------------------------------
+
+def _biz(con, bid, name, lat, lon, city="Hyderabad", status=None, phone=None):
+    con.execute("insert into businesses (id, source, name, lat, lon, city, phone, confidence, fetched_at) values (?, 't', ?, ?, ?, ?, ?, 0.9, '2026-11-20')",
+                (bid, name, lat, lon, city, phone))
+    con.execute("insert into audits (business_id, site_class, audited_at) values (?, 'none', '2026-11-20')", (bid,))
+    if status:
+        con.execute("insert into leads (business_id, score, status, updated_at) values (?, 80, ?, '2026-11-20')", (bid, status))
+    con.commit()
+
+
+def test_same_name_nearby_is_one_place(con, cfg):
+    from leadscout.scoring import score_all
+
+    _biz(con, "r1", "Rajrudra Developers", 17.4948, 78.3996, status="new")
+    _biz(con, "r2", "Rajrudra Developers.", 17.4900, 78.4030, status="drafted")  # 0.6 km away, already drafted
+    _biz(con, "m1", "Regalia Interiors", 15.2750, 73.9578, city="margao goa")
+    _biz(con, "m2", "Regalia  interiors", 15.2650, 73.9660, city="Madgaon")  # same town, different spelling
+    _biz(con, "o1", "Orthosquare", 17.44, 78.38)
+    _biz(con, "o2", "Orthosquare", 15.27, 73.95, city="Madgaon")  # 530 km away: a different place
+    score_all(con, cfg)
+    st = {r[0]: (r[1], r[2]) for r in con.execute("select business_id, status, reasons from leads")}
+    assert st["r2"][0] == "drafted" and st["r1"] == ("excluded", '["Duplicate listing"]')  # your draft is kept
+    assert sum("Duplicate" in st[b][1] for b in ("m1", "m2")) == 1
+    assert not any("Duplicate" in st[b][1] for b in ("o1", "o2"))
+
+
+def test_duplicate_draft_is_dropped_when_twin_is_further_along(con, cfg):
+    from leadscout.scoring import score_all
+
+    _biz(con, "a", "Smile Dental", 17.49, 78.39, status="contacted")
+    _biz(con, "b", "Smile Dental", 17.491, 78.391, status="approved")
+    score_all(con, cfg)
+    st = dict(con.execute("select business_id, status from leads").fetchall())
+    assert st == {"a": "contacted", "b": "excluded"}
+
+
+def test_searching_an_area_again_reuses_its_entry(con):
+    from leadscout import searches
+
+    first = searches.queue_search(con, "Madgaon", "", ["dental"])
+    con.execute("update searches set status = 'done'")
+    again = searches.queue_search(con, "Madgaon", "", ["salons"])
+    assert first == again
+    rows = con.execute("select status, categories from searches").fetchall()
+    assert len(rows) == 1 and rows[0]["status"] == "queued"
+    assert "Dental clinics" in rows[0]["categories"] and "Salons and spas" in rows[0]["categories"]
+    assert searches.queue_search(con, "Madgaon", "Fatorda", ["dental"]) != first  # a neighbourhood is its own area
+    con.execute("update searches set status = 'running' where id = ?", (first,))
+    with pytest.raises(ValueError, match="right now"):
+        searches.queue_search(con, "Madgaon", "", ["dental"])
+
+
+def test_old_repeated_area_rows_are_merged(tmp_path):
+    path = tmp_path / "old.db"
+    con = db.connect(path)
+    for label, lat in (("Navelim", 15.25885), ("Navelim", 15.25885), ("Madgaon", 15.27501), ("goa", None), ("Goa", None)):
+        con.execute("insert into searches (city, label, categories, status, created_at, lat, lon) values (?, ?, '{}', 'done', '2026-11-21', ?, ?)",
+                    (label, label, lat, lat and 73.9))
+    con.commit()
+    con.close()
+    db._ready.clear()
+    con = db.connect(path)
+    assert sorted(r[0] for r in con.execute("select label from searches")) == ["Goa", "Madgaon", "Navelim"]

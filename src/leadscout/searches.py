@@ -55,6 +55,27 @@ def queue_search(con, city: str, neighbourhood: str, type_keys: list[str], extra
         raise ValueError(f"Couldn't find '{city}' in the list of Indian places. Start typing and pick it from the suggestions.")
     label = f"{neighbourhood}, {place['name']}" if neighbourhood else place["name"]
     names = [BUSINESS_TYPES[k][0] for k in type_keys if k in BUSINESS_TYPES] + ([extra.strip()] if extra.strip() else [])
+    # The same area searched again runs its existing entry again, with any new business types added, so an
+    # area is never listed twice.
+    same = con.execute(
+        """select * from searches where abs(lat - ?) < 0.0001 and abs(lon - ?) < 0.0001
+           and lower(coalesce(neighbourhood, '')) = lower(?) order by id desc limit 1""",
+        (place["lat"], place["lon"], neighbourhood),
+    ).fetchone()
+    if same:
+        if same["status"] == "running":
+            raise ValueError(f"{same['label']} is being searched right now. Its results will appear when it finishes.")
+        old = json.loads(same["categories"])
+        merged_terms = list(dict.fromkeys(old["terms"].split(",") + ",".join(terms).split(",")))
+        merged_names = list(dict.fromkeys(old["names"] + names))
+        con.execute(
+            """update searches set categories = ?, status = 'queued', message = 'Waiting to start (searching again)',
+               created_at = ?, finished_at = null where id = ?""",
+            (json.dumps({"terms": ",".join(merged_terms), "names": merged_names}), now(), same["id"]),
+        )
+        con.commit()
+        _wake.set()
+        return same["id"]
     cur = con.execute(
         """insert into searches (city, neighbourhood, label, categories, status, message, created_at, lat, lon, state, population, resolved)
            values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)""",
@@ -163,5 +184,5 @@ def searched_areas(con) -> list:
                     where b.area = s.label and l.email is not null and l.status not in ('excluded')) as with_email,
                   (select count(*) from outreach o join businesses b on b.id = o.business_id
                     where b.area = s.label and o.channel = 'email') as emailed
-           from searches s order by s.id desc"""
+           from searches s order by s.created_at desc, s.id desc"""
     ).fetchall()
