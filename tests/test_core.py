@@ -663,3 +663,45 @@ def test_stop_event_ends_the_run(con, cfg):
     logs = []
     sender.run(con, cfg, SendingGmail(), log=logs.append, stop=stop)
     assert logs == ["Stopped."]
+
+
+def test_dashboard_starts_and_stops_sending(client, home, monkeypatch):
+    import threading
+
+    from leadscout.web import extras, sending
+
+    home.execute("update leads set status = 'approved'")
+    home.execute("delete from outreach")
+    home.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'Hi', 'Body', 't', 1, '2026-11-20', '2026-11-20')")
+    home.commit()
+    gate = threading.Event()
+
+    def run(con, cfg, gmail, log, stop):  # stands in for sender.run: no network, waits to be stopped
+        log("running")
+        gate.set()
+        stop.wait(5)
+        log("Stopped.")
+
+    monkeypatch.setattr(sending.sender, "run", run)
+    monkeypatch.setattr(extras, "_gmail", lambda: SendingGmail())
+    monkeypatch.setattr("leadscout.web.app.in_window", lambda sc: True)
+    assert "Start sending" in client.get("/").text
+    assert client.post("/send/start", follow_redirects=False).status_code == 303
+    assert gate.wait(5) and sending.running()
+    assert "Already sending" in client.post("/send/start").text
+    assert "Stop sending" in client.get("/").text
+    client.post("/send/stop")
+    sending._thread.join(5)
+    assert not sending.running()
+    assert "Stopped." in client.get("/").text
+
+
+def test_dashboard_send_needs_gmail_login(client, monkeypatch):
+    from leadscout.web import extras, sending
+
+    def no_login():
+        raise ValueError("Run leadscout login first.")
+
+    monkeypatch.setattr(extras, "_gmail", no_login)
+    assert "Run leadscout login first." in client.post("/send/start").text
+    assert not sending.running()

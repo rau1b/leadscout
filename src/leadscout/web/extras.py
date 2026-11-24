@@ -71,6 +71,29 @@ def send_reply_route(lead_id: str, body: str = Form(...)):
     return RedirectResponse(f"/leads/{lead_id}?saved=replied#reply", status_code=303)
 
 
+# ---- Sending from the dashboard ------------------------------------------------------------
+
+
+@app.post("/send/start")
+def send_start():
+    from leadscout.web import sending
+
+    try:
+        gm = _gmail()
+    except ValueError as e:
+        return RedirectResponse(f"/?msg={quote(str(e))}", status_code=303)
+    msg = "Sending started. It stops by itself at the daily cap, the end of the window or a bounce spike." if sending.start(gm) else "Already sending."
+    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
+
+
+@app.post("/send/stop")
+def send_stop():
+    from leadscout.web import sending
+
+    sending.stop()
+    return RedirectResponse(f"/?msg={quote('Stopping. Nothing more goes out after the email in hand.')}", status_code=303)
+
+
 # ---- Deals ---------------------------------------------------------------------------------
 
 def rupees(text: str) -> int | None:

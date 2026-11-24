@@ -12,7 +12,19 @@
 <div class="today">
   <section class="page" aria-labelledby="page-h">
     <h2 id="page-h">Today's page <b>{{ sent_today }} / {{ cap }}</b></h2>
-    <p class="when">{% if not open_now %}Window closed. Sending resumes at {{ cfg.sending.window_start }}.{% elif queue %}Next up: {{ queue[0].name }}, while <code>leadscout send</code> runs. Window closes {{ cfg.sending.window_end }}.{% else %}Window open until {{ cfg.sending.window_end }}. Nothing queued.{% endif %}</p>
+    <p class="when">{% if not open_now %}Window closed. Sending resumes at {{ cfg.sending.window_start }}.{% elif queue %}Next up: {{ queue[0].name }}{% if not sending %}, once you start sending{% endif %}. Window closes {{ cfg.sending.window_end }}.{% else %}Window open until {{ cfg.sending.window_end }}. Nothing queued.{% endif %}</p>
+    {% if msg %}<p class="note" role="status">{{ msg }}</p>{% endif %}
+    <div class="sendctl">
+      {% if stopping %}
+      <button class="btn quiet" disabled>Stopping…</button>
+      {% elif sending %}
+      <form method="post" action="/send/stop"><button class="btn danger">Stop sending</button></form>
+      {% else %}
+      <form method="post" action="/send/start"><button class="btn"{% if not open_now or not has_next %} disabled{% endif %}>Start sending</button></form>
+      {% endif %}
+      {% if sending %}<span class="hint">Sending. Keep the dashboard open; refresh to see progress.</span>{% endif %}
+    </div>
+    {% if send_log %}<ol class="sendlog" aria-label="Sending log">{% for line in send_log %}<li>{{ line }}</li>{% endfor %}</ol>{% endif %}
     <ol class="slots">
       {% for s in sent %}
       <li><time>{{ s.sent_at|hm }}</time><a href="/leads/{{ s.id }}">{{ s.name }}{% if s.kind == 'followup' %} (follow-up){% endif %}</a></li>

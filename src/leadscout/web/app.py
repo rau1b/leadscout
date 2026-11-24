@@ -134,7 +134,9 @@ tpl.env.globals["wa_link"] = wa_link
 
 
 @app.get("/", response_class=HTMLResponse)
-def today(request: Request):
+def today(request: Request, msg: str = ""):
+    from leadscout.web import sending
+
     con = db.connect()
     cfg = config.load()
     day = today_ist().isoformat()
@@ -164,6 +166,10 @@ def today(request: Request):
             open_now=in_window(cfg.sending),
             now=datetime.now(IST),
             has_next=next_item(con, cfg) is not None,
+            msg=msg,
+            sending=sending.running(),
+            stopping=sending.stopping(),
+            send_log=list(sending.log),
         ),
     )
 

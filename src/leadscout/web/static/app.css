@@ -147,6 +147,9 @@ textarea { resize: vertical; min-height: 220px; }
 .page h2 b { color: var(--ink); font-size: 27px; }
 .page .when { color: var(--muted); font-size: 15px; margin-top: 2px; }
 .slots { list-style: none; margin: var(--s3) 0 0; padding: 0; }
+.page .note { margin: var(--s3) 0 0; font-size: 15px; }
+.sendctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-top: var(--s3); }
+.sendlog { list-style: none; margin: var(--s2) 0 0; padding: 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .slots li { height: 25px; border-bottom: 1px solid var(--row); font-size: 15px; color: var(--ink); display: flex; gap: var(--s2); overflow: hidden; white-space: nowrap; }
 .slots li time { color: var(--quiet); width: 48px; flex: none; }
 .slots li.f { color: var(--muted); }
