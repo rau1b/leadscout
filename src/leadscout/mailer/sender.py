@@ -42,7 +42,11 @@ def bounce_rate(con, window: int = 40) -> float:
 
 
 def next_item(con, cfg) -> dict | None:
-    """A due follow-up first, else the best approved first email."""
+    """A due follow-up first, else the best approved first email.
+
+    Items with a send claim are skipped: either another sender has them, or a send crashed after Gmail took it
+    and before it was recorded. Never risk sending twice; such a lead just waits for a human to look.
+    """
     cutoff = (datetime.now(IST) - timedelta(days=cfg.sending["followup_after_days"])).isoformat(timespec="seconds")
     row = con.execute(
         """select l.business_id, l.email, b.name, b.phone, p.subject, o.gmail_id, o.thread_id
@@ -50,6 +54,8 @@ def next_item(con, cfg) -> dict | None:
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
            where l.status = 'contacted' and o.sent_at < ?
              and (select count(*) from outreach where business_id = l.business_id and kind = 'followup') < ?
+             and not exists (select 1 from meta where key = 'sending:' || l.business_id || ':followup:'
+                             || (select count(*) from outreach where business_id = l.business_id and kind = 'followup'))
            order by o.sent_at limit 1""",
         (cutoff, cfg.sending["max_followups"]),
     ).fetchone()
@@ -59,6 +65,7 @@ def next_item(con, cfg) -> dict | None:
         """select l.business_id, l.email, b.name, b.phone, p.subject, p.body
            from leads l join businesses b on b.id = l.business_id join pitches p on p.business_id = l.business_id
            where l.status = 'approved' and p.approved = 1 and l.email is not null
+             and not exists (select 1 from meta where key = 'sending:' || l.business_id || ':first:0')
            order by l.score desc limit 1"""
     ).fetchone()
     return {**dict(row), "kind": "first"} if row else None
@@ -71,16 +78,28 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         return f"skipped {item['name']} (opted out)"
     s = cfg.sender
     sender = f"{s.get('name') or s['business']} <{s['email']}>"
-    if item["kind"] == "followup":
-        subject, body = templates.followup(item, cfg)
-        if dry_run:
-            return f"[dry run] follow-up to {item['email']}: {subject}"
-        ref = gmail.message_id_header(item["gmail_id"])
-        res = gmail.send(item["email"], subject, body, sender, thread_id=item["thread_id"], in_reply_to=ref, unsubscribe=s["email"])
-    else:
-        if dry_run:
-            return f"[dry run] to {item['email']}: {item['subject']}"
-        res = gmail.send(item["email"], item["subject"], item["body"], sender, unsubscribe=s["email"])
+    if dry_run:
+        what = f"follow-up to {item['email']}: {templates.followup(item, cfg)[0]}" if item["kind"] == "followup" else f"to {item['email']}: {item['subject']}"
+        return f"[dry run] {what}"
+    # Claim this email first, so two senders running at once can't both send it. Kept after sending as a record.
+    n_followups = con.execute("select count(*) from outreach where business_id = ? and kind = 'followup'", (item["business_id"],)).fetchone()[0]
+    claim = f"sending:{item['business_id']}:{item['kind']}:{n_followups}"
+    if not con.execute("insert or ignore into meta (key, value) values (?, ?)", (claim, now())).rowcount:
+        con.commit()
+        return f"skipped {item['name']} (already being sent)"
+    con.commit()
+    try:
+        if item["kind"] == "followup":
+            subject, body = templates.followup(item, cfg)
+            ref = gmail.message_id_header(item["gmail_id"])
+            res = gmail.send(item["email"], subject, body, sender, thread_id=item["thread_id"], in_reply_to=ref, unsubscribe=s["email"])
+        else:
+            res = gmail.send(item["email"], item["subject"], item["body"], sender, unsubscribe=s["email"])
+    except Exception:
+        con.execute("delete from meta where key = ?", (claim,))  # not sent: free it for the next try
+        con.commit()
+        raise
+    if item["kind"] == "first":
         con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ?", (now(), item["business_id"]))
     con.execute(
         "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', ?, ?, ?, ?, ?)",
@@ -150,9 +169,13 @@ def send_reply(con, cfg, gmail, business_id: str, body: str) -> None:
     con.commit()
 
 
-def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print) -> None:
+def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None) -> None:
+    """Send until the cap, the window, the bounce limit or the queue stops it. `stop` (a threading.Event) ends it early."""
     sc = cfg.sending
     while True:
+        if stop is not None and stop.is_set():
+            log("Stopped.")
+            return
         if not dry_run and not in_window(sc):
             log(f"Outside the sending window ({sc['window_start']}-{sc['window_end']} IST, {', '.join(sc['days'])}). Stopping.")
             return
@@ -178,4 +201,9 @@ def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print) -
             return
         gap = random.randint(sc["min_gap_seconds"], sc["max_gap_seconds"])
         log(f"Next email in {gap // 60}m {gap % 60}s...")
-        time.sleep(gap)
+        if stop is not None:
+            if stop.wait(gap):
+                log("Stopped.")
+                return
+        else:
+            time.sleep(gap)

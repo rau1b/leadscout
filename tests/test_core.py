@@ -609,3 +609,57 @@ def test_old_repeated_area_rows_are_merged(tmp_path):
     db._ready.clear()
     con = db.connect(path)
     assert sorted(r[0] for r in con.execute("select label from searches")) == ["Goa", "Madgaon", "Navelim"]
+
+
+class SendingGmail:
+    def __init__(self, fail=False):
+        self.sent, self.fail = [], fail
+
+    def message_id_header(self, gid):
+        return "<abc@mail>"
+
+    def send(self, to, subject, body, sender, thread_id=None, in_reply_to=None, unsubscribe=None):
+        if self.fail:
+            raise RuntimeError("network down")
+        self.sent.append(to)
+        return {"id": f"s{len(self.sent)}", "threadId": "t9"}
+
+
+def _approved_first(con):
+    _seed_lead(con, status="approved")
+    con.execute("delete from outreach")
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'Hi', 'Body', 't', 1, '2026-11-20', '2026-11-20')")
+    con.commit()
+
+
+def test_claimed_email_is_never_sent_twice(con, cfg):
+    _approved_first(con)
+    item = sender.next_item(con, cfg)
+    con.execute("insert into meta (key, value) values ('sending:b1:first:0', 'x')")  # another sender got there first
+    con.commit()
+    gm = SendingGmail()
+    assert "already being sent" in sender.send_one(con, cfg, gm, item)
+    assert gm.sent == []
+    assert sender.next_item(con, cfg) is None  # a stuck claim doesn't block or loop the queue
+
+
+def test_failed_send_frees_its_claim(con, cfg):
+    _approved_first(con)
+    item = sender.next_item(con, cfg)
+    with pytest.raises(RuntimeError):
+        sender.send_one(con, cfg, SendingGmail(fail=True), item)
+    assert sender.next_item(con, cfg)["business_id"] == "b1"
+    gm = SendingGmail()
+    assert sender.send_one(con, cfg, gm, item).startswith("sent first")
+    assert gm.sent == ["owner@clinic.in"]
+
+
+def test_stop_event_ends_the_run(con, cfg):
+    import threading
+
+    _approved_first(con)
+    stop = threading.Event()
+    stop.set()
+    logs = []
+    sender.run(con, cfg, SendingGmail(), log=logs.append, stop=stop)
+    assert logs == ["Stopped."]
