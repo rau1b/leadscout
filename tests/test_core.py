@@ -405,3 +405,141 @@ def test_pitch_has_no_borrowed_statistics(cfg):
     slow = {"name": "Nysa", "category": "interior_design", "locality": "KPHB", "site_class": "real", "lcp_s": 7.8,
             "perf_score": 31, "https": 1, "viewport": 1, "copyright_year": 2026, "has_whatsapp": 1}
     assert "research" not in templates.render(slow, cfg)["body"]
+
+
+# ---- Improvements: pitch checks, unsubscribe, holidays, purge, WhatsApp cap, duplicates ----
+
+def test_import_sets_aside_unmeasured_numbers(home, cfg):
+    import json
+
+    from leadscout.pitch import jobs
+
+    _seed_lead(home, "b2")
+    home.execute("update audits set site_class = 'real', lcp_s = 7.8, perf_score = 31 where business_id = 'b2'")
+    home.commit()
+    jobs.results_path().write_text(json.dumps([
+        {"id": "b2", "subject": "Your site takes 7.8s on mobile", "body": "It scores 31/100. Call +91 90000 00000.", "whatsapp": "7.8s"},
+        {"id": "b1", "subject": "53% of visitors leave", "body": "Sites over 3 seconds lose 20 years of trust.", "whatsapp": ""},
+    ]), encoding="utf-8")
+    n, rejected = jobs.import_results(home, cfg)
+    assert n == 1 and [r["id"] for r in rejected] == ["b1"]
+    assert rejected[0]["unmeasured_numbers"] == ["3", "20", "53"]
+    assert jobs.rejected_path().exists()
+    assert home.execute("select count(*) from pitches").fetchone()[0] == 1
+
+
+def test_cold_emails_carry_list_unsubscribe(con, cfg):
+    import base64
+
+    from leadscout.mailer.gmail import Gmail
+
+    class Session:
+        def post(self, url, json):
+            self.raw = base64.urlsafe_b64decode(json["raw"]).decode()
+
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"id": "x", "threadId": "t"}
+            return R()
+
+    gm = Gmail.__new__(Gmail)
+    gm.s = Session()
+    _seed_lead(con, status="approved")
+    con.execute("delete from outreach")
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'Hi', 'Body', 't', 1, '2026-11-20', '2026-11-20')")
+    con.commit()
+    sender.send_one(con, cfg, gm, sender.next_item(con, cfg))
+    assert f"List-Unsubscribe: <mailto:{cfg.sender['email']}?subject=unsubscribe>" in gm.s.raw
+
+
+def test_unsubscribe_button_opts_out(con, cfg):
+    _seed_lead(con)
+
+    class Gm(FakeGmail):
+        def unsubscribe_requests(self, me):
+            return {"owner@clinic.in"}
+
+    assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 1
+    assert con.execute("select status from leads").fetchone()[0] == "opted_out"
+    assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 0  # counted once
+
+
+def test_skip_dates_close_the_window(cfg):
+    monday = datetime(2027, 1, 25, 11, 0, tzinfo=IST)
+    assert in_window(cfg.sending, monday)
+    assert not in_window({**cfg.sending, "skip_dates": ["2027-01-25"]}, monday)
+    assert not in_window(cfg.sending, datetime(2027, 1, 26, 11, 0, tzinfo=IST))  # Republic Day, in the example config
+
+
+def test_purge_runs_once_a_day(con, cfg):
+    from leadscout.compliance import purge_if_due
+
+    con.execute("insert into businesses (id, source, name, fetched_at) values ('old', 't', 'Old', '2020-01-01T10:00:00+05:30')")
+    _seed_lead(con)  # contacted: kept however old
+    con.execute("update businesses set fetched_at = '2020-01-01T10:00:00+05:30'")
+    con.commit()
+    assert purge_if_due(con, cfg) == 1
+    assert purge_if_due(con, cfg) is None
+    assert [r[0] for r in con.execute("select id from businesses")] == ["b1"]
+
+
+def test_whatsapp_chats_are_counted_and_capped(client, home):
+    r = client.post("/leads/b1/whatsapp", follow_redirects=False)
+    assert r.headers["location"].startswith("https://wa.me/919000000007")
+    assert home.execute("select count(*) from outreach where channel = 'whatsapp'").fetchone()[0] == 1
+    assert "New chats today: 1 of 20" in client.get("/leads/b1").text
+
+    _seed_lead(home, "b2")
+    home.execute("update businesses set phone = '+919000000008', phone_type = 'mobile' where id = 'b2'")
+    for _ in range(19):
+        home.execute("insert into outreach (business_id, channel, kind, sent_at) values ('b1', 'whatsapp', 'first', ?)", (db.now(),))
+    home.commit()
+    blocked = client.post("/leads/b2/whatsapp", follow_redirects=False)
+    assert blocked.headers["location"].startswith("/leads/b2?msg=")
+    assert "Open WhatsApp chat" not in client.get("/leads/b2").text
+    # Reopening a chat you already started isn't a new chat.
+    assert client.post("/leads/b1/whatsapp", follow_redirects=False).headers["location"].startswith("https://wa.me/")
+
+
+def test_duplicates_by_phone_or_own_site(con, cfg):
+    from leadscout.scoring import score_all
+
+    rows = [
+        ("d1", "Smile Dental", "+919000000011", None, 0.9),
+        ("d2", "Smile Dental Clinic Kukatpally", "+919000000011", None, 0.5),  # same phone
+        ("s1", "Nysa Interiors", None, "https://nysa.in", 0.9),
+        ("s2", "Nysa Interior Studio", None, "http://www.nysa.in/contact", 0.5),  # same own site
+        ("g1", "Cafe One", None, "https://sites.google.com/view/cafeone", 0.9),
+        ("g2", "Cafe Two", None, "https://sites.google.com/view/cafetwo", 0.9),  # shared host: different businesses
+        ("g3", "Cafe Three", None, "https://sites.google.com/view/cafethree", 0.9),
+    ]
+    for bid, name, phone, site, conf in rows:
+        con.execute("insert into businesses (id, source, name, phone, website, confidence, fetched_at) values (?, 't', ?, ?, ?, ?, '2026-11-20')",
+                    (bid, name, phone, site, conf))
+        con.execute("insert into audits (business_id, site_class, audited_at) values (?, ?, '2026-11-20')",
+                    (bid, "free_subdomain" if site and "google" in site else "none"))
+    con.commit()
+    score_all(con, cfg)
+    reasons = {r[0]: r[1] for r in con.execute("select business_id, reasons from leads")}
+    assert {b for b, why in reasons.items() if "Duplicate" in why} == {"d2", "s2"}
+    assert not any("Chain" in why for why in reasons.values())
+
+
+def test_site_fetch_is_capped():
+    import asyncio
+
+    import httpx
+
+    from leadscout.audit.site import MAX_BYTES, fetch
+
+    big = b"<html>" + b"x" * (MAX_BYTES * 2)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, content=big))) as c:
+            return await fetch(c, "http://big.in")
+
+    resp, text = asyncio.run(go())
+    assert resp.status_code == 200 and len(text) == MAX_BYTES

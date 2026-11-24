@@ -70,11 +70,15 @@ class Gmail:
     def profile_email(self) -> str:
         return self.s.get(f"{API}/profile").json()["emailAddress"]
 
-    def send(self, to: str, subject: str, body: str, sender: str, thread_id: str | None = None, in_reply_to: str | None = None) -> dict:
+    def send(self, to: str, subject: str, body: str, sender: str, thread_id: str | None = None, in_reply_to: str | None = None,
+             unsubscribe: str | None = None) -> dict:
         msg = EmailMessage()
         msg["To"] = to
         msg["From"] = sender
         msg["Subject"] = subject
+        if unsubscribe:
+            # Gmail and others show an "Unsubscribe" button; it emails us, and unsubscribe_requests() picks that up.
+            msg["List-Unsubscribe"] = f"<mailto:{unsubscribe}?subject=unsubscribe>"
         if in_reply_to:
             msg["In-Reply-To"] = in_reply_to
             msg["References"] = in_reply_to
@@ -92,6 +96,22 @@ class Gmail:
             if h["name"].lower() == "message-id":
                 return h["value"]
         return None
+
+    def unsubscribe_requests(self, my_address: str, days: int = 30) -> set[str]:
+        """Addresses that used the List-Unsubscribe button: those arrive as new emails, outside our threads."""
+        r = self.s.get(f"{API}/messages", params={"q": f"subject:unsubscribe to:{my_address} newer_than:{days}d", "maxResults": 100})
+        if r.status_code != 200:
+            return set()
+        out = set()
+        for m in r.json().get("messages", []):
+            meta = self.s.get(f"{API}/messages/{m['id']}", params={"format": "metadata", "metadataHeaders": ["From", "Subject"]})
+            if meta.status_code != 200:
+                continue
+            headers = {h["name"].lower(): h["value"] for h in meta.json().get("payload", {}).get("headers", [])}
+            sender = parseaddr(headers.get("from", ""))[1].lower()
+            if sender and sender != my_address.lower() and headers.get("subject", "").strip().lower() == "unsubscribe":
+                out.add(sender)
+        return out
 
     def incoming(self, thread_id: str, my_address: str) -> list[dict]:
         """Messages in a thread that were not sent by us, with their plain-text body (quoted history removed)."""

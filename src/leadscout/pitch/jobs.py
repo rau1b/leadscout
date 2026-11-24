@@ -1,6 +1,7 @@
 """Pitch drafting: templates (offline) or Claude Code on your Pro plan (via data/pitch_jobs.json)."""
 
 import json
+import re
 
 from leadscout.config import data_dir
 from leadscout.db import jload, now
@@ -68,14 +69,59 @@ def prepare_jobs(con, cfg, limit: int) -> int:
     return len(facts)
 
 
-def import_results(con) -> int:
+NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def _numbers(text: str) -> set[str]:
+    """Every number in the text, with Indian or Western digit grouping removed ("1,25,000" -> "125000")."""
+    out = set()
+    for n in NUMBER_RE.findall(text or ""):
+        n = n.replace(",", "").rstrip(".")
+        out.add(n)
+        if "." in n:
+            out |= set(n.split("."))  # "7.8" also allows a bare "7" or "8" from the same fact
+    return out
+
+
+def unmeasured_numbers(con, cfg, business_id: str, pitch: dict) -> list[str]:
+    """Numbers in a pitch that aren't in this lead's stored facts or the sender's details. Empty means it's clean."""
+    # Only fields a pitch may quote. Ids, timestamps, coordinates and our internal score are left out,
+    # or their digits would let invented figures like "20 years" through.
+    row = con.execute(
+        """select b.name, b.address, b.locality, b.area, b.city, b.website, b.phone, l.email,
+                  a.final_url, a.perf_score, a.lcp_s, a.cls, a.tbt_ms, a.copyright_year, a.generator, a.status_code
+           from businesses b join audits a on a.business_id = b.id join leads l on l.business_id = b.id where b.id = ?""",
+        (business_id,),
+    ).fetchone()
+    if not row:
+        return []
+    known = json.dumps(dict(row), ensure_ascii=False, default=str)
+    known += json.dumps({"sender": cfg.sender, "pitch": cfg.pitch}, ensure_ascii=False) + templates.OPT_OUT
+    allowed = _numbers(known) | {"100"}  # "31/100" for a speed score
+    written = " ".join(str(pitch.get(k) or "") for k in ("subject", "body", "whatsapp"))
+    return sorted(_numbers(written) - allowed, key=lambda n: (len(n), n))
+
+
+def rejected_path():
+    return data_dir() / "pitch_results.rejected.json"
+
+
+def import_results(con, cfg) -> tuple[int, list[dict]]:
+    """Save Claude's pitches. A pitch citing a number we never measured is set aside in
+    pitch_results.rejected.json with the numbers to fix, instead of being imported."""
     data = json.loads(results_path().read_text(encoding="utf-8"))
     known = {r["business_id"] for r in con.execute("select business_id from leads")}
-    n = 0
+    n, rejected = 0, []
     for item in data:
         if item.get("id") in known and item.get("subject") and item.get("body"):
+            bad = unmeasured_numbers(con, cfg, item["id"], item)
+            if bad:
+                rejected.append({**item, "unmeasured_numbers": bad})
+                continue
             save_pitch(con, item["id"], item, "claude")
             n += 1
     con.commit()
+    if rejected:
+        rejected_path().write_text(json.dumps(rejected, indent=2, ensure_ascii=False), encoding="utf-8")
     results_path().replace(results_path().with_suffix(".imported.json"))
-    return n
+    return n, rejected

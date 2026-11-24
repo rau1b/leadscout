@@ -121,7 +121,12 @@ def pitch(
         n = jobs.prepare_jobs(con, cfg, prepare)
         typer.echo(f"Prepared {n} leads in {jobs.jobs_path()}. Now run /pitch-today in Claude Code.")
     elif import_:
-        typer.echo(f"Imported {jobs.import_results(con)} pitches.")
+        n, rejected = jobs.import_results(con, cfg)
+        typer.echo(f"Imported {n} pitches.")
+        if rejected:
+            typer.echo(f"Set aside {len(rejected)} that cite numbers LeadScout never measured (see {jobs.rejected_path()}):")
+            for r in rejected:
+                typer.echo(f"  {r['id']}: {', '.join(r['unmeasured_numbers'])}")
     else:
         raise typer.BadParameter("Use --templates N, --prepare N or --import.")
 

@@ -80,6 +80,8 @@ def in_window(cfg_sending: dict, at: datetime | None = None) -> bool:
     at = at or datetime.now(IST)
     if DAYS[at.weekday()] not in cfg_sending["days"]:
         return False
+    if at.date().isoformat() in cfg_sending.get("skip_dates", []):
+        return False  # festivals and holidays you listed in config.toml
     start = time.fromisoformat(cfg_sending["window_start"])
     end = time.fromisoformat(cfg_sending["window_end"])
     return start <= at.time() < end
@@ -93,3 +95,15 @@ def purge_stale(con, days: int) -> int:
     )
     con.commit()
     return cur.rowcount
+
+
+def purge_if_due(con, cfg) -> int | None:
+    """Run purge_stale at most once a day (the dashboard calls this on start). None if it already ran today."""
+    from leadscout.db import get_meta, set_meta
+
+    today = datetime.now(IST).date().isoformat()
+    if get_meta(con, "last_purge") == today:
+        return None
+    n = purge_stale(con, cfg.retention["purge_uncontacted_after_days"])
+    set_meta(con, "last_purge", today)
+    return n

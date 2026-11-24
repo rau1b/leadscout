@@ -21,6 +21,9 @@ from leadscout.pitch import jobs, templates
 HERE = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app):
+    from leadscout.compliance import purge_if_due
+
+    purge_if_due(db.connect(), config.load())  # retention: drop never-contacted leads past the limit, once a day
     searches.start_worker()  # runs area searches queued from the Find leads page
     yield
 
@@ -203,7 +206,7 @@ def sent(request: Request):
     con = db.connect()
     rows = con.execute(
         """select o.*, b.name, l.status from outreach o join businesses b on b.id = o.business_id
-           join leads l on l.business_id = o.business_id order by o.sent_at desc limit 300"""
+           join leads l on l.business_id = o.business_id where o.channel = 'email' order by o.sent_at desc limit 300"""
     ).fetchall()
     return tpl.TemplateResponse(request, "sent.html", ctx(request, nav="sent", rows=rows))
 
@@ -223,7 +226,8 @@ def lead_detail(request: Request, lead_id: str, saved: str = "", msg: str = ""):
         request,
         "lead.html",
         ctx(request, nav="leads", r=r, reasons=jload(r["reasons"]), socials=jload(r["socials"]), history=history, saved=saved,
-            msg=msg, convo=convo, quick=quick, deal=deal),
+            msg=msg, convo=convo, quick=quick, deal=deal, wa_today=whatsapp_today(con), wa_cap=whatsapp_cap(cfg),
+            wa_opened=any(h["channel"] == "whatsapp" for h in history)),
     )
 
 
@@ -292,6 +296,38 @@ def set_status(lead_id: str, status: str = Form(...)):
     con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (status, now(), lead_id))
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}", status_code=303)
+
+
+def whatsapp_today(con) -> int:
+    return con.execute(
+        "select count(*) from outreach where channel = 'whatsapp' and substr(sent_at, 1, 10) = ?", (today_ist().isoformat(),)
+    ).fetchone()[0]
+
+
+def whatsapp_cap(cfg) -> int:
+    return int(cfg.sending.get("whatsapp_daily_cap", 20))
+
+
+@app.post("/leads/{lead_id}/whatsapp")
+def open_whatsapp(lead_id: str):
+    """Count the chat, then hand over to WhatsApp. You still write and send the message yourself."""
+    con = db.connect()
+    r = lead_row(lead_id)
+    link = wa_link(r)
+    if not link or r["status"] in ("opted_out", "bounced"):
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote('No WhatsApp chat for this lead.')}", status_code=303)
+    done, cap = whatsapp_today(con), whatsapp_cap(config.load())
+    already = con.execute("select 1 from outreach where business_id = ? and channel = 'whatsapp'", (lead_id,)).fetchone()
+    if not already:
+        if done >= cap:
+            msg = f"You've opened {done} new WhatsApp chats today (limit {cap}). Try again tomorrow."
+            return RedirectResponse(f"/leads/{lead_id}?msg={quote(msg)}", status_code=303)
+        con.execute(
+            "insert into outreach (business_id, channel, kind, to_addr, sent_at) values (?, 'whatsapp', 'first', ?, ?)",
+            (lead_id, r["phone"], now()),
+        )
+        con.commit()
+    return RedirectResponse(link, status_code=303)
 
 
 @app.post("/leads/{lead_id}/optout")

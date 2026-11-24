@@ -4,7 +4,7 @@ import random
 import time
 from datetime import date, datetime, timedelta
 
-from leadscout.compliance import in_window, is_suppressed, suppress
+from leadscout.compliance import in_window, is_suppressed, opt_out, suppress
 from leadscout.config import IST
 from leadscout.db import get_meta, now, set_meta
 from leadscout.pitch import templates
@@ -76,11 +76,11 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         if dry_run:
             return f"[dry run] follow-up to {item['email']}: {subject}"
         ref = gmail.message_id_header(item["gmail_id"])
-        res = gmail.send(item["email"], subject, body, sender, thread_id=item["thread_id"], in_reply_to=ref)
+        res = gmail.send(item["email"], subject, body, sender, thread_id=item["thread_id"], in_reply_to=ref, unsubscribe=s["email"])
     else:
         if dry_run:
             return f"[dry run] to {item['email']}: {item['subject']}"
-        res = gmail.send(item["email"], item["subject"], item["body"], sender)
+        res = gmail.send(item["email"], item["subject"], item["body"], sender, unsubscribe=s["email"])
         con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ?", (now(), item["business_id"]))
     con.execute(
         "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', ?, ?, ?, ?, ?)",
@@ -118,6 +118,11 @@ def check_replies(con, cfg, gmail) -> dict:
                 suppress(con, r["email"], m["kind"])
             if m["kind"] == "opted_out" and r["phone"]:
                 suppress(con, r["phone"], "opted_out")  # a "no" covers WhatsApp too; a bounce is only about the address
+    # The List-Unsubscribe button sends a fresh email, not a reply in the thread.
+    for addr in getattr(gmail, "unsubscribe_requests", lambda _me: set())(cfg.sender["email"]):
+        if not is_suppressed(con, addr):
+            opt_out(con, addr, "unsubscribe button")
+            counts["opted_out"] += 1
     con.commit()
     return counts
 

@@ -5,6 +5,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 from leadscout import emailcheck
+from leadscout.audit.classify import FREE_HOSTS
 from leadscout.audit.site import is_outdated
 from leadscout.compliance import is_suppressed
 from leadscout.db import jload, now
@@ -58,8 +59,8 @@ def chain_domains(con, min_count: int = 3) -> set[str]:
     """Domains used by several listings are chains, hospitals or aggregators: skip them."""
     counts = Counter()
     for (w,) in con.execute("select website from businesses where website is not null"):
-        if not domain_in(w, SOCIAL_DOMAINS + DIRECTORY_DOMAINS):
-            counts[domain(w)] += 1
+        if not domain_in(w, SOCIAL_DOMAINS + DIRECTORY_DOMAINS) and domain(w) not in FREE_HOSTS:
+            counts[domain(w)] += 1  # sites.google.com etc. host many unrelated businesses
     return {d for d, n in counts.items() if n >= min_count}
 
 
@@ -81,11 +82,17 @@ def score_all(con, cfg) -> dict:
     # Best-confidence record first, so a duplicate listing is the one excluded.
     rows = sorted(rows, key=lambda r: -(r["confidence"] or 0))
     for r in rows:
-        dup_key = (" ".join((r["name"] or "").lower().split()), r["phone"] or r["website"] or r["id"])
-        is_dup = dup_key in seen
-        seen.add(dup_key)
         cat = f"{r['category'] or ''} {r['category_path'] or ''}".lower()
         site_domain = domain(r["website"])
+        # The same business often appears more than once under slightly different names. Same phone or same
+        # own-site domain means the same business (shared social and directory links don't count).
+        dup_keys = {("name", " ".join((r["name"] or "").lower().split()), r["phone"] or r["website"] or r["id"])}
+        if r["phone"]:
+            dup_keys.add(("phone", r["phone"]))
+        if site_domain and site_domain not in FREE_HOSTS and not domain_in(r["website"], SOCIAL_DOMAINS + DIRECTORY_DOMAINS):
+            dup_keys.add(("site", site_domain))
+        is_dup = bool(dup_keys & seen)
+        seen |= dup_keys
         candidates = jload(r["emails"]) + jload(r["found_emails"])
         email = emailcheck.best_email(candidates, site_domain) if candidates else None
         excluded = None

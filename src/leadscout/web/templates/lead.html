@@ -121,8 +121,13 @@
       <h2>Reach them</h2>
       <div class="stack">
         {% set wa = wa_link(r) %}
-        {% if wa and r.status not in ('opted_out', 'bounced') %}<a class="btn quiet" href="{{ wa }}" target="_blank" rel="noopener">Open WhatsApp chat</a>
-        <p class="hint">Manual only, at most 15 to 20 new chats a day, from a separate number.</p>
+        {% if wa and r.status not in ('opted_out', 'bounced') %}
+        {% if wa_opened or wa_today < wa_cap %}
+        <form method="post" action="/leads/{{ r.id }}/whatsapp" target="_blank">
+          <button class="btn quiet">{% if wa_opened %}Open WhatsApp chat again{% else %}Open WhatsApp chat{% endif %}</button>
+        </form>
+        {% endif %}
+        <p class="hint">New chats today: {{ wa_today }} of {{ wa_cap }}. Manual only, from a separate number, one message each.</p>
         {% elif r.phone %}<p class="hint">Landline number: no WhatsApp link. Call only after they reply.</p>{% endif %}
         {% if r.status != 'opted_out' %}
         <form method="post" action="/leads/{{ r.id }}/optout" onsubmit="return confirm('Never contact {{ r.name|e }} again?')">
@@ -133,8 +138,8 @@
     </section>
     {% if history %}
     <section>
-      <h2>Emails sent</h2>
-      <ul class="why">{% for h in history %}<li>{{ h.sent_at|day }} {{ h.sent_at|hm }}: {{ {'followup': 'Follow-up', 'reply': 'Your reply'}.get(h.kind, 'First email') }} to {{ h.to_addr }}</li>{% endfor %}</ul>
+      <h2>Contact history</h2>
+      <ul class="why">{% for h in history %}<li>{{ h.sent_at|day }} {{ h.sent_at|hm }}: {% if h.channel == 'whatsapp' %}WhatsApp chat opened with {{ h.to_addr }}{% else %}{{ {'followup': 'Follow-up', 'reply': 'Your reply'}.get(h.kind, 'First email') }} to {{ h.to_addr }}{% endif %}</li>{% endfor %}</ul>
     </section>
     {% endif %}
   </div>

@@ -22,7 +22,7 @@ Last checked: 21 Nov 2026.
 - Every email carries your real name, business name, city, phone number and a plain opt-out line ("Reply 'no' and I won't email again").
 - Send one email plus at most one follow-up. Stop on any reply that says no.
 - Contact email comes only from the business's own website or listing, never from guessed or bought lists.
-- Enforced in code: daily cap per inbox, follow-up limit, suppression check.
+- Enforced in code: daily cap per inbox, follow-up limit, suppression check, and a `List-Unsubscribe` header whose button adds the sender to the opt-out list on the next inbox check.
 
 ### WhatsApp
 
@@ -35,7 +35,7 @@ Last checked: 21 Nov 2026.
   - Stop at the first "no" and add them to the suppression list.
 - After a business replies, WhatsApp becomes a normal, safe channel for the conversation.
 - The WhatsApp Business **API** is for customers who opted in. Marketing templates cost about ₹0.86 per delivered message in India. Not useful for cold leads.
-- Enforced in code: WhatsApp links only for mobile numbers, and never for a number on the opt-out list. The 15–20 a day limit is up to you: LeadScout doesn't count links opened.
+- Enforced in code: WhatsApp links only for mobile numbers, never for a number on the opt-out list, and at most `whatsapp_daily_cap` new chats opened a day (20 by default).
 
 ### Phone calls
 
@@ -46,7 +46,7 @@ Last checked: 21 Nov 2026.
 
 ### Timing
 
-- Send only between **10:00 and 19:00 IST, Monday to Saturday**, and avoid major festival days. This is good practice, not law. `leadscout send` enforces the window in `config.toml` (10:00–17:00 by default). Festival days are not checked, so skip those yourself.
+- Send only between **10:00 and 19:00 IST, Monday to Saturday**, and avoid major festival days. This is good practice, not law. `leadscout send` enforces the window in `config.toml` (10:00–17:00 by default) and skips every date in `skip_dates`. Festival dates move each year, so add your region's to `skip_dates` yourself.
 
 ## Data and privacy
 
@@ -58,7 +58,7 @@ Last checked: 21 Nov 2026.
   - Store locally only. Never sell, share or upload lead lists.
   - **Opt-outs are permanent and immediate.** One reply of "no", "stop" or "not interested" puts the number/email on the suppression list.
   - Delete on request: `leadscout forget <phone|email>` removes all their data and keeps only a hashed suppression entry.
-  - Retention: `leadscout purge` deletes businesses you never contacted after 90 days (`[retention]` in `config.toml`). It doesn't run on its own, so run it now and then.
+  - Retention: businesses you never contacted are deleted after 90 days (`[retention]` in `config.toml`). The dashboard does this once a day when it starts; `leadscout purge` runs it by hand.
 
 ### Where the data comes from
 
