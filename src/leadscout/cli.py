@@ -161,13 +161,11 @@ def check_replies():
 @app.command()
 def optout(value: str):
     """Never contact this email or phone again."""
-    from leadscout.compliance import suppress
+    from leadscout.compliance import opt_out
 
     _, con = _ctx()
-    suppress(con, value, "manual")
-    con.execute("update leads set status = 'opted_out' where lower(email) = lower(?)", (value,))
-    con.commit()
-    typer.echo("Added to the opt-out list.")
+    n = opt_out(con, value, "manual")
+    typer.echo(f"Added to the opt-out list ({n} lead(s) marked opted out).")
 
 
 @app.command()
@@ -190,15 +188,19 @@ def purge():
 
 @app.command()
 def export(path: str = typer.Argument("leads.csv"), min_score: int = typer.Option(0)):
-    """Export leads to CSV (opens in Google Sheets or Excel)."""
+    """Export leads to CSV (opens in Google Sheets or Excel). Opted-out, bounced and hidden leads are left out."""
+    from leadscout.compliance import is_suppressed
+
     _, con = _ctx()
     rows = con.execute(
         """select b.name, b.category, b.locality, b.phone, b.phone_type, l.email, b.website, a.site_class,
                   a.perf_score, a.lcp_s, l.score, l.status, l.reasons
            from leads l join businesses b on b.id = l.business_id join audits a on a.business_id = b.id
-           where l.score >= ? and l.status not in ('excluded', 'opted_out') order by l.score desc""",
+           where l.score >= ? and l.status not in ('excluded', 'opted_out', 'bounced', 'hidden') order by l.score desc""",
         (min_score,),
     ).fetchall()
+    # Status can lag behind the opt-out list (e.g. the same phone on another listing), so check the list itself.
+    rows = [r for r in rows if not is_suppressed(con, r["email"], r["phone"])]
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(rows[0].keys() if rows else ["name"])

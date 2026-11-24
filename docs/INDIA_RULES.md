@@ -35,7 +35,7 @@ Last checked: 21 Nov 2026.
   - Stop at the first "no" and add them to the suppression list.
 - After a business replies, WhatsApp becomes a normal, safe channel for the conversation.
 - The WhatsApp Business **API** is for customers who opted in. Marketing templates cost about ₹0.86 per delivered message in India. Not useful for cold leads.
-- Enforced in code: WhatsApp links only for mobile numbers, a daily cap on links opened, suppression check.
+- Enforced in code: WhatsApp links only for mobile numbers, and never for a number on the opt-out list. The 15–20 a day limit is up to you: LeadScout doesn't count links opened.
 
 ### Phone calls
 
@@ -46,7 +46,7 @@ Last checked: 21 Nov 2026.
 
 ### Timing
 
-- Send only between **10:00 and 19:00 IST, Monday to Saturday**, and avoid major festival days. This is good practice, not law. Enforced in code as quiet hours for the dashboard's "send" buttons.
+- Send only between **10:00 and 19:00 IST, Monday to Saturday**, and avoid major festival days. This is good practice, not law. `leadscout send` enforces the window in `config.toml` (10:00–17:00 by default). Festival days are not checked, so skip those yourself.
 
 ## Data and privacy
 
@@ -58,12 +58,12 @@ Last checked: 21 Nov 2026.
   - Store locally only. Never sell, share or upload lead lists.
   - **Opt-outs are permanent and immediate.** One reply of "no", "stop" or "not interested" puts the number/email on the suppression list.
   - Delete on request: `leadscout forget <phone|email>` removes all their data and keeps only a hashed suppression entry.
-  - Retention: leads you never engaged with are purged after 90 days.
+  - Retention: `leadscout purge` deletes businesses you never contacted after 90 days (`[retention]` in `config.toml`). It doesn't run on its own, so run it now and then.
 
-### Google Maps Platform terms
+### Where the data comes from
 
-- Using the Places API, not scraping Maps, keeps you inside Google's terms.
-- Google lets you store `place_id` indefinitely but restricts caching other Places content. LeadScout keys everything on `place_id`, treats the other Places fields as a short-lived working cache (auto-expired after 30 days for leads you haven't contacted), and re-fetches when you act on a lead. Check the current Maps Platform service terms before you scale up.
+- Businesses come from **Overture Maps** open data and from CSV files you collect yourself. LeadScout doesn't use the Google Places API and never scrapes Google Maps.
+- Check Overture's licence and attribution terms before you publish or share anything built from its data.
 
 ## Pitch content rules (in the AI system prompt)
 
@@ -81,5 +81,3 @@ Last checked: 21 Nov 2026.
 - TRAI 140-series for promotional calls (2026): [TRAI PR 91/2026](https://trai.gov.in/sites/default/files/2026-07/PR_No91of2026.pdf), [TRAI PR 119/2026](https://www.trai.gov.in/sites/default/files/2026-09/PR_No119of2026.pdf)
 - WhatsApp opt-in requirement: [Meta: Get opt-in for WhatsApp](https://developers.facebook.com/documentation/business-messaging/whatsapp/getting-opt-in)
 - WhatsApp India pricing: [Meta pricing](https://developers.facebook.com/docs/whatsapp/pricing), [MyOperator 2026](https://myoperator.com/blog/whatsapp-business-api-pricing-india-2026)
-- Google Maps Platform India pricing: [India pricing](https://developers.google.com/maps/billing-and-pricing/pricing-india), [India billing FAQ](https://developers.google.com/maps/billing-and-pricing/india)
-- Places field tiers: [Place Data Fields (New)](https://developers.google.com/maps/documentation/places/web-service/data-fields), [Text Search (New)](https://developers.google.com/maps/documentation/places/web-service/text-search)

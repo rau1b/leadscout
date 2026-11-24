@@ -45,7 +45,7 @@ def next_item(con, cfg) -> dict | None:
     """A due follow-up first, else the best approved first email."""
     cutoff = (datetime.now(IST) - timedelta(days=cfg.sending["followup_after_days"])).isoformat(timespec="seconds")
     row = con.execute(
-        """select l.business_id, l.email, b.name, p.subject, o.gmail_id, o.thread_id
+        """select l.business_id, l.email, b.name, b.phone, p.subject, o.gmail_id, o.thread_id
            from leads l join businesses b on b.id = l.business_id join pitches p on p.business_id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
            where l.status = 'contacted' and o.sent_at < ?
@@ -96,7 +96,8 @@ def check_replies(con, cfg, gmail) -> dict:
     """Save new replies and update lead status. Ongoing conversations are checked too, so later replies show up."""
     counts = {"replied": 0, "opted_out": 0, "bounced": 0}
     rows = con.execute(
-        """select l.business_id, l.email, l.status, o.thread_id from leads l
+        """select l.business_id, l.email, l.status, o.thread_id, b.phone from leads l
+           join businesses b on b.id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
            where l.status in ('contacted', 'replied', 'won')"""
     ).fetchall()
@@ -115,6 +116,8 @@ def check_replies(con, cfg, gmail) -> dict:
                 con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (m["kind"], now(), r["business_id"]))
             if m["kind"] in ("opted_out", "bounced"):
                 suppress(con, r["email"], m["kind"])
+            if m["kind"] == "opted_out" and r["phone"]:
+                suppress(con, r["phone"], "opted_out")  # a "no" covers WhatsApp too; a bounce is only about the address
     con.commit()
     return counts
 

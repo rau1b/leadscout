@@ -121,7 +121,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
     if not emails and not parked:
         for path in ("contact", "contact-us", "contactus"):
             try:
-                r2 = await client.get(urljoin(str(resp.url), path))
+                r2 = await client.get(urljoin(str(resp.url), "/" + path))  # from the site root, not the current folder
             except httpx.HTTPError:
                 continue
             if r2.status_code < 400:

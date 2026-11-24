@@ -3,16 +3,16 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from leadscout import config, db, searches
 from leadscout.audit.classify import LABELS
-from leadscout.compliance import in_window, suppress
+from leadscout.compliance import in_window, lead_is_suppressed, opt_out
 from leadscout.config import IST
 from leadscout.db import jload, now
 from leadscout.mailer.sender import daily_cap, next_item, sent_today, today_ist
@@ -26,6 +26,26 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="LeadScout", lifespan=lifespan)
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+@app.middleware("http")
+async def local_only(request: Request, call_next):
+    """The dashboard is for this computer only.
+
+    - The Host check stops DNS rebinding, where another site points its own domain at 127.0.0.1 to read the dashboard.
+    - The Origin check stops cross-site form posts, where a page you visit makes the dashboard approve or send.
+    """
+    if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS:
+        return PlainTextResponse("LeadScout only answers on 127.0.0.1.", status_code=403)
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin and urlsplit(origin).hostname not in LOCAL_HOSTS:
+            return PlainTextResponse("Blocked a form sent from another website.", status_code=403)
+    return await call_next(request)
+
+
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 tpl = Jinja2Templates(directory=HERE / "templates")
 
@@ -100,6 +120,8 @@ def lead_row(lead_id: str):
 
 def wa_link(r) -> str | None:
     if r["phone_type"] != "mobile" or not r["phone"]:
+        return None
+    if lead_is_suppressed(db.connect(), r["id"]):
         return None
     text = r["whatsapp"] or ""
     return f"https://wa.me/{r['phone'].lstrip('+')}" + (f"?text={quote(text)}" if text else "")
@@ -264,6 +286,9 @@ def set_status(lead_id: str, status: str = Form(...)):
     if status not in ("won", "lost", "replied", "new"):
         raise HTTPException(400, "Unknown status")
     con = db.connect()
+    if lead_is_suppressed(con, lead_id):
+        msg = "This business opted out. Their status stays Opted out."
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(msg)}", status_code=303)
     con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (status, now(), lead_id))
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}", status_code=303)
@@ -275,7 +300,7 @@ def optout(lead_id: str):
     r = lead_row(lead_id)
     for v in (r["email"], r["phone"]):
         if v:
-            suppress(con, v, "dashboard")
+            opt_out(con, v, "dashboard")  # also marks other listings with the same email or phone
     con.execute("update leads set status = 'opted_out', updated_at = ? where business_id = ?", (now(), lead_id))
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}?saved=optout", status_code=303)

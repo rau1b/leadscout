@@ -97,9 +97,8 @@ def problem(f: dict) -> tuple[str, str]:
         if f.get("lcp_s") and f["lcp_s"] > 4
         else f"A few quick wins for {possessive(n)} website"
     )
+    # Only what we measured for this site: no borrowed industry statistics.
     body = "I ran Google's free speed and mobile test on your website, and " + "; ".join(issues[:2]) + "."
-    if f.get("lcp_s") and f["lcp_s"] > 4:
-        body += " Google's research found over half of mobile visitors leave a page that takes more than 3 seconds to load."
     return subject, body
 
 

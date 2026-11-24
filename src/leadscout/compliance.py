@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta
 import phonenumbers
 
 from leadscout.config import IST
-from leadscout.db import now
+from leadscout.db import jload, now
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -40,11 +40,33 @@ def is_suppressed(con, *values: str | None) -> bool:
     return con.execute(f"select 1 from suppression where value_hash in ({marks})", hashes).fetchone() is not None
 
 
+def lead_is_suppressed(con, business_id: str) -> bool:
+    """True if this lead's email or phone is on the opt-out list."""
+    r = con.execute(
+        "select l.email, b.phone from leads l join businesses b on b.id = l.business_id where l.business_id = ?", (business_id,)
+    ).fetchone()
+    return bool(r) and is_suppressed(con, r["email"], r["phone"])
+
+
+def opt_out(con, value: str, reason: str) -> int:
+    """Suppress an email or phone and mark every lead holding it as opted out. Returns leads updated."""
+    suppress(con, value, reason)
+    key = normalize(value)
+    cur = con.execute(
+        """update leads set status = 'opted_out', updated_at = ?
+           where lower(email) = ? or business_id in (select id from businesses where phone = ?)""",
+        (now(), key, key),
+    )
+    con.commit()
+    return cur.rowcount
+
+
 def forget(con, value: str) -> int:
     """Delete every business holding this email/phone; keep only the hashed opt-out entry."""
     key = normalize(value)
     rows = con.execute("select id, phone, emails from businesses").fetchall()
-    ids = [r["id"] for r in rows if r["phone"] == key or key in (r["emails"] or "").lower()]
+    # Exact matches only: a substring test would also delete aa@shop.in when asked to forget a@shop.in.
+    ids = [r["id"] for r in rows if r["phone"] == key or key in {e.strip().lower() for e in jload(r["emails"])}]
     ids += [r["business_id"] for r in con.execute("select business_id from leads where lower(email) = ?", (key,))]
     ids = sorted(set(ids))
     for bid in ids:

@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from leadscout.config import IST, data_dir
 
@@ -132,14 +133,23 @@ def now() -> str:
     return datetime.now(IST).isoformat(timespec="seconds")
 
 
+# Database files already migrated in this process. The dashboard connects on every request, so the
+# migration and schema script run once per file instead of on every page load.
+_ready: set[str] = set()
+
+
 def connect(path=None) -> sqlite3.Connection:
+    path = Path(path or data_dir() / "leadscout.db").resolve()
+    fresh = str(path) not in _ready or not path.exists()
     # The dashboard's search worker writes while pages read: wait for locks instead of failing, and use WAL.
-    con = sqlite3.connect(path or data_dir() / "leadscout.db", timeout=30, check_same_thread=False)
+    con = sqlite3.connect(path, timeout=30, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("pragma foreign_keys = on")
-    con.execute("pragma journal_mode = wal")
-    _migrate(con)
-    con.executescript(SCHEMA)
+    if fresh:
+        con.execute("pragma journal_mode = wal")  # stored in the file, so once is enough
+        _migrate(con)
+        con.executescript(SCHEMA)
+        _ready.add(str(path))
     return con
 
 

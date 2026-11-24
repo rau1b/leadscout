@@ -6,6 +6,7 @@ from fastapi import Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from leadscout import config, db
+from leadscout.compliance import lead_is_suppressed
 from leadscout.db import now
 from leadscout.web.app import app, ctx, lead_row, tpl
 
@@ -36,7 +37,7 @@ def _gmail():
     try:
         return Gmail()
     except RuntimeError as e:
-        raise ValueError("Gmail isn't connected yet. Run `leadscout gmail-login` once, then try again.") from e
+        raise ValueError(str(e)) from e  # not logged in, or the login expired: the message says what to run
 
 
 @app.post("/replies/check")
@@ -85,7 +86,7 @@ def save_deal(lead_id: str, quote_inr: str = Form(""), paid_inr: str = Form(""),
         "update leads set quote_inr = ?, paid_inr = ?, deal_note = ?, updated_at = ? where business_id = ?",
         (rupees(quote_inr), rupees(paid_inr), deal_note.strip() or None, now(), lead_id),
     )
-    if status in ("won", "lost", "replied"):
+    if status in ("won", "lost", "replied") and not lead_is_suppressed(con, lead_id):
         con.execute(
             "update leads set status = ?, won_at = case when ? = 'won' then ? else won_at end where business_id = ?",
             (status, status, now(), lead_id),
@@ -144,7 +145,14 @@ def hide(lead_id: str, back: str = Form("")):
         (now(), lead_id),
     )
     con.commit()
-    return RedirectResponse(back if back.startswith("/") else f"/leads/{lead_id}", status_code=303)
+    return RedirectResponse(local_path(back) or f"/leads/{lead_id}", status_code=303)
+
+
+def local_path(url: str) -> str | None:
+    """`url` if it stays on this dashboard. "//evil.in" and "/\\evil.in" are other sites to a browser."""
+    if url.startswith("/") and not url.startswith(("//", "/\\")) and "\\" not in url:
+        return url
+    return None
 
 
 @app.post("/leads/{lead_id}/unhide")

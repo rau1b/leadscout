@@ -92,7 +92,10 @@ def test_warmup_cap(con, cfg):
 
 @pytest.mark.parametrize(
     "reply,is_no",
-    [("No thanks", True), ("Not interested", True), ("no.", True), ("No problem, please send the mockup", False), ("Yes send it", False)],
+    [("No thanks", True), ("Not interested", True), ("no.", True), ("No problem, please send the mockup", False), ("Yes send it", False),
+     ("nahi chahiye", True), ("Abhi nahi", True), ("No need", True), ("not now, thanks", True), ("Please remove my email", True),
+     ("We are not looking", True), ("We don't need a website", True), ("Zaroorat nahi hai", True), ("Do not contact us", True),
+     ("I don't need much, just a simple site", False), ("Is there no cheaper option?", False), ("Haan, bhejiye", False)],
 )
 def test_reply_no_detection(reply, is_no):
     assert bool(NO_WORDS.search(reply)) is is_no
@@ -261,3 +264,144 @@ def test_signature_skips_blank_sender_details(cfg):
     assert "Regards,\nShinnen Creative, Goa\n\n" in p["body"] and "here in Goa" in p["body"]
     assert p["whatsapp"].startswith("Hi, this is Shinnen Creative in Goa.")
     assert "Your Name" not in p["body"] and "github" not in p["body"]
+
+
+# ---- Regression tests for the compliance and safety fixes ----------------------------------
+
+def test_forget_matches_exact_email_only(con):
+    from leadscout.compliance import forget
+
+    for bid, email in (("A", "aa@shop.in"), ("B", "a@shop.in")):
+        con.execute("insert into businesses (id, source, name, emails, fetched_at) values (?, 't', ?, ?, '2026-11-20')",
+                    (bid, bid, f'["{email}"]'))
+    con.commit()
+    assert forget(con, "A@Shop.in") == 1
+    assert [r[0] for r in con.execute("select id from businesses")] == ["A"]
+    assert is_suppressed(con, "a@shop.in")
+
+
+def test_followup_respects_phone_optout(con, cfg):
+    _seed_lead(con)
+    con.execute("update businesses set phone = '+919000000003'")
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 's', 'b', 't', 1, '2026-11-20', '2026-11-20')")
+    suppress(con, "90000 00003", "said no on WhatsApp")
+    item = sender.next_item(con, cfg)
+    assert item["kind"] == "followup"
+    assert sender.send_one(con, cfg, None, item, dry_run=True).startswith("skipped")
+
+
+def test_reply_no_also_blocks_the_phone(con, cfg):
+    _seed_lead(con)
+    con.execute("update businesses set phone = '+919000000005'")
+    con.commit()
+    gm = FakeGmail([{"id": "m3", "from": "owner@clinic.in", "subject": "Re", "body": "nahi chahiye", "received_ms": 1795000000000, "kind": "opted_out"}])
+    sender.check_replies(con, cfg, gm)
+    assert is_suppressed(con, "+919000000005")
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A throwaway project folder, so CLI and dashboard use a temporary database."""
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    con = db.connect()
+    _seed_lead(con)
+    con.execute("update businesses set phone = '+919000000007', phone_type = 'mobile'")
+    con.commit()
+    return con
+
+
+def test_export_and_cli_optout_use_the_optout_list(home, tmp_path):
+    from typer.testing import CliRunner
+
+    from leadscout.cli import app as cli
+
+    out = tmp_path / "leads.csv"
+    CliRunner().invoke(cli, ["optout", "90000 00007"], catch_exceptions=False)  # by phone
+    assert home.execute("select status from leads").fetchone()[0] == "opted_out"
+    home.execute("update leads set status = 'new'")  # status lagging behind the list
+    home.commit()
+    CliRunner().invoke(cli, ["export", str(out)], catch_exceptions=False)
+    assert "owner@clinic.in" not in out.read_text(encoding="utf-8-sig")
+
+
+@pytest.fixture
+def client(home):
+    from fastapi.testclient import TestClient
+
+    from leadscout.web.app import app
+
+    return TestClient(app, base_url="http://127.0.0.1:8000")
+
+
+def test_dashboard_blocks_other_sites(client):
+    assert client.post("/pitches/approve-all", headers={"Origin": "https://evil.example"}, follow_redirects=False).status_code == 403
+    assert client.post("/pitches/approve-all", headers={"Origin": "null"}, follow_redirects=False).status_code == 403
+    assert client.get("/find", headers={"Host": "evil.example:8000"}).status_code == 403  # DNS rebinding
+    assert client.post("/pitches/approve-all", headers={"Origin": "http://127.0.0.1:8000"}, follow_redirects=False).status_code == 303
+    assert client.get("/leads/b1").status_code == 200
+
+
+def test_hide_never_redirects_off_site(client):
+    for back in ("//evil.example/x", r"/\evil.example", "https://evil.example"):
+        r = client.post("/leads/b1/hide", data={"back": back}, follow_redirects=False)
+        assert r.headers["location"] == "/leads/b1", back
+    assert client.post("/leads/b1/hide", data={"back": "/leads?q=x"}, follow_redirects=False).headers["location"] == "/leads?q=x"
+
+
+def test_dashboard_cannot_reopen_an_opted_out_lead(client, home):
+    from leadscout.compliance import opt_out
+
+    opt_out(home, "owner@clinic.in", "test")
+    client.post("/leads/b1/status", data={"status": "new"}, follow_redirects=False)
+    client.post("/leads/b1/deal", data={"status": "won", "quote_inr": "15000"}, follow_redirects=False)
+    assert home.execute("select status from leads").fetchone()[0] == "opted_out"
+    assert "Open WhatsApp chat" not in client.get("/leads/b1").text
+
+
+def test_contact_page_is_fetched_from_the_site_root():
+    import asyncio
+
+    import httpx
+
+    from leadscout.audit.site import audit_site
+
+    seen = []
+    home_page = "<html><head><script></script></head><body>" + "Welcome to our clinic. " * 10 + "</body></html>"
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path == "/contact":
+            return httpx.Response(200, html="<a href='mailto:hi@clinic.in'>Mail us</a>")
+        return httpx.Response(200, html=home_page)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await audit_site(c, "http://clinic.in/home/index.html")
+
+    assert asyncio.run(go())["found_emails"] == {"hi@clinic.in"}
+    assert "/home/contact" not in seen
+
+
+def test_expired_gmail_login_says_what_to_do(tmp_path, monkeypatch):
+    from google.auth.exceptions import RefreshError
+
+    from leadscout.mailer import gmail
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    (db.data_dir() / "gmail_token.json").write_text("{}")
+
+    class Expired:
+        valid, refresh_token = False, "r"
+
+        def refresh(self, _request):
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+    monkeypatch.setattr(gmail.Credentials, "from_authorized_user_file", lambda *a: Expired())
+    with pytest.raises(RuntimeError, match="gmail-login"):
+        gmail.Gmail()
+
+
+def test_pitch_has_no_borrowed_statistics(cfg):
+    slow = {"name": "Nysa", "category": "interior_design", "locality": "KPHB", "site_class": "real", "lcp_s": 7.8,
+            "perf_score": 31, "https": 1, "viewport": 1, "copyright_year": 2026, "has_whatsapp": 1}
+    assert "research" not in templates.render(slow, cfg)["body"]
