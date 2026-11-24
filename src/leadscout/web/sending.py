@@ -1,7 +1,7 @@
 """Sending from the dashboard: the same `sender.run` as `leadscout send`, in a background thread you can stop.
 
 All the limits live in `sender.run` (warm-up cap, IST window, bounce pause, suppression list), so they apply here too.
-Each email is claimed before it goes out, so this and a `leadscout send` running at the same time can't double-send.
+Only one sender runs at a time (a lease in `meta`), so this and `leadscout send` can't both send or double the cap.
 """
 
 import threading

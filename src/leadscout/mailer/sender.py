@@ -88,16 +88,29 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         con.commit()
         return f"skipped {item['name']} (already being sent)"
     con.commit()
+
+    def release():  # surely not sent: free it for the next try
+        con.execute("delete from meta where key = ?", (claim,))
+        con.commit()
+
     try:
         if item["kind"] == "followup":
             subject, body = templates.followup(item, cfg)
             ref = gmail.message_id_header(item["gmail_id"])
-            res = gmail.send(item["email"], subject, body, sender, thread_id=item["thread_id"], in_reply_to=ref, unsubscribe=s["email"])
+            args = (item["email"], subject, body, sender)
+            kw = {"thread_id": item["thread_id"], "in_reply_to": ref, "unsubscribe": s["email"]}
         else:
-            res = gmail.send(item["email"], item["subject"], item["body"], sender, unsubscribe=s["email"])
+            args, kw = (item["email"], item["subject"], item["body"], sender), {"unsubscribe": s["email"]}
     except Exception:
-        con.execute("delete from meta where key = ?", (claim,))  # not sent: free it for the next try
-        con.commit()
+        release()  # failed before anything went to Gmail
+        raise
+    try:
+        res = gmail.send(*args, **kw)
+    except Exception as e:
+        # Gmail may have taken it before the error (a 5xx, a dropped connection). Then keep the claim:
+        # the lead shows under "may have gone out" and the Sent-folder check settles it.
+        if surely_not_sent(e):
+            release()
         raise
     if item["kind"] == "first":
         con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ?", (now(), item["business_id"]))
@@ -109,6 +122,18 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         set_meta(con, "first_send_date", today_ist().isoformat())
     con.commit()
     return f"sent {item['kind']} to {item['name']} <{item['email']}>"
+
+
+def surely_not_sent(e: Exception) -> bool:
+    """True only for errors that happen before Gmail accepts a message: a refused login, a connection that
+    never opened, or a 4xx (Gmail rejected the request)."""
+    import requests
+    from google.auth.exceptions import RefreshError
+
+    if isinstance(e, (RefreshError, requests.ConnectTimeout)):
+        return True
+    resp = getattr(e, "response", None)
+    return isinstance(e, requests.HTTPError) and resp is not None and 400 <= resp.status_code < 500
 
 
 CLAIM_STALE_AFTER = timedelta(minutes=10)  # a live send takes seconds; a claim this old with no record was cut off
@@ -180,10 +205,18 @@ def check_replies(con, cfg, gmail) -> dict:
             if m["kind"] == "opted_out" and r["phone"]:
                 suppress(con, r["phone"], "opted_out")  # a "no" covers WhatsApp too; a bounce is only about the address
     # The List-Unsubscribe button sends a fresh email, not a reply in the thread.
-    for addr in getattr(gmail, "unsubscribe_requests", lambda _me: set())(cfg.sender["email"]):
+    # Only mail since the last good check, so each pass doesn't re-read 30 days of it. If Gmail can't be asked,
+    # the marker stays put and the next check covers the gap.
+    asked_at = now()
+    last = get_meta(con, "unsubscribe_checked_at")
+    ask = getattr(gmail, "unsubscribe_requests", lambda _me, since=None: set())
+    found = ask(cfg.sender["email"], since=datetime.fromisoformat(last) if last else None)
+    for addr in found or ():
         if not is_suppressed(con, addr):
             opt_out(con, addr, "unsubscribe button")
             counts["opted_out"] += 1
+    if found is not None:
+        set_meta(con, "unsubscribe_checked_at", asked_at)
     con.commit()
     return counts
 
@@ -211,10 +244,59 @@ def send_reply(con, cfg, gmail, business_id: str, body: str) -> None:
     con.commit()
 
 
+LEASE_KEY = "sender_lease"
+
+
+def _lease_stale_after(sc) -> timedelta:
+    return timedelta(seconds=sc["max_gap_seconds"]) + timedelta(minutes=5)  # a live sender beats more often than this
+
+
+def take_lease(con, sc, owner: str) -> bool:
+    """Be the only sender. Two at once would each keep their own cap count and gap. A lease not renewed for a
+    while (its sender was closed) is taken over."""
+    stamp = f"{now()}|{owner}"
+    if con.execute("insert or ignore into meta (key, value) values (?, ?)", (LEASE_KEY, stamp)).rowcount:
+        con.commit()
+        return True
+    old = get_meta(con, LEASE_KEY) or ""
+    at, _, holder = old.partition("|")
+    stale = not at or datetime.fromisoformat(at) < datetime.now(IST) - _lease_stale_after(sc)
+    if holder != owner and not stale:
+        return False
+    took = con.execute("update meta set value = ? where key = ? and value = ?", (stamp, LEASE_KEY, old)).rowcount
+    con.commit()
+    return bool(took)
+
+
+def drop_lease(con, owner: str) -> None:
+    con.execute("delete from meta where key = ? and value like ?", (LEASE_KEY, f"%|{owner}"))
+    con.commit()
+
+
 def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None) -> None:
-    """Send until the cap, the window, the bounce limit or the queue stops it. `stop` (a threading.Event) ends it early."""
+    """Send until the cap, the window, the bounce limit or the queue stops it. `stop` (a threading.Event) ends it early.
+    Only one run sends at a time, whether from `leadscout send` or the dashboard."""
+    if dry_run:
+        return _run(con, cfg, gmail, dry_run, once, log, stop)
+    import os
+    import threading
+
+    owner = f"{os.getpid()}-{threading.get_ident()}"
+    if not take_lease(con, cfg.sending, owner):
+        log("Another sender is already running (leadscout send or the dashboard). Stop that one first.")
+        return
+    try:
+        return _run(con, cfg, gmail, dry_run, once, log, stop, lambda: take_lease(con, cfg.sending, owner))
+    finally:
+        drop_lease(con, owner)
+
+
+def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
     sc = cfg.sending
     while True:
+        if not renew():
+            log("Another sender took over. Stopping.")
+            return
         if stop is not None and stop.is_set():
             log("Stopped.")
             return

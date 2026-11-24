@@ -16,6 +16,8 @@ CATEGORY_PLURALS = {
 }
 
 
+GOOGLE_SITES_CLOSED = 2024  # Google Business Profile websites (business.site) stopped working in March 2024
+
 def nice_category(cat: str | None) -> str:
     if not cat:
         return "local businesses"
@@ -44,7 +46,7 @@ def problem(f: dict) -> tuple[str, str]:
     if c == "dead_google_site":
         return (
             f"The website link on {possessive(n)} listing is dead",
-            "Your listing still links to a business.site page. Google shut those sites down in 2024, "
+            f"Your listing still links to a business.site page. Google shut those sites down in {GOOGLE_SITES_CLOSED}, "
             "so anyone who taps \"Website\" lands on an error page.",
         )
     if c == "social_only":

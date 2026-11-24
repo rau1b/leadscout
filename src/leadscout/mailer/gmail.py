@@ -30,7 +30,7 @@ NO_WORDS = re.compile(
     r"|\bno (thanks|thank you|need)\b"
     r"|\bnot (interested|now|required|needed|looking|right now)\b"
     r"|\b(nahi|nahin|nai) (chahiye|chahie|chaiye|chahte)\b|\babhi (nahi|nahin|nai)\b|\b(zaroorat|zarurat|jarurat|jaroorat) nahi"
-    r"|unsubscribe|\bremove (me|my|us|our)\b|\bstop (emailing|sending|messaging|contacting)"
+    r"|unsubscribe|\bremove (me|us)\b|\bremove (my|our) (e-?mail|email address|number|phone|name|details|contact)|\bstop (emailing|sending|messaging|contacting)"
     r"|\b(don'?t|do not) (email|contact|message)"
     r"|\b(don'?t|do not) need (a |any |the |your )?(website|site|it|this|that|anything|services?)\b",
     re.I,
@@ -98,11 +98,13 @@ class Gmail:
                 return h["value"]
         return None
 
-    def unsubscribe_requests(self, my_address: str, days: int = 30) -> set[str]:
-        """Addresses that used the List-Unsubscribe button: those arrive as new emails, outside our threads."""
-        r = self.s.get(f"{API}/messages", params={"q": f"subject:unsubscribe to:{my_address} newer_than:{days}d", "maxResults": 100})
+    def unsubscribe_requests(self, my_address: str, since: datetime | None = None) -> set[str] | None:
+        """Addresses that used the List-Unsubscribe button: those arrive as new emails, outside our threads.
+        Only mail after `since` (with an hour's slack), else the last 30 days. None if Gmail couldn't be asked."""
+        when = f"after:{int(since.timestamp()) - 3600}" if since else "newer_than:30d"
+        r = self.s.get(f"{API}/messages", params={"q": f"subject:unsubscribe to:{my_address} {when}", "maxResults": 100})
         if r.status_code != 200:
-            return set()
+            return None
         out = set()
         for m in r.json().get("messages", []):
             meta = self.s.get(f"{API}/messages/{m['id']}", params={"format": "metadata", "metadataHeaders": ["From", "Subject"]})

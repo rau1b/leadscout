@@ -459,7 +459,7 @@ def test_unsubscribe_button_opts_out(con, cfg):
     _seed_lead(con)
 
     class Gm(FakeGmail):
-        def unsubscribe_requests(self, me):
+        def unsubscribe_requests(self, me, since=None):
             return {"owner@clinic.in"}
 
     assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 1
@@ -643,15 +643,31 @@ def test_claimed_email_is_never_sent_twice(con, cfg):
     assert sender.next_item(con, cfg) is None  # a stuck claim doesn't block or loop the queue
 
 
-def test_failed_send_frees_its_claim(con, cfg):
+def test_send_error_before_gmail_takes_it_frees_the_claim(con, cfg):
+    import requests
+
+    class Rejected(SendingGmail):
+        def send(self, *a, **kw):
+            resp = requests.Response()
+            resp.status_code = 400
+            raise requests.HTTPError("bad request", response=resp)
+
     _approved_first(con)
     item = sender.next_item(con, cfg)
-    with pytest.raises(RuntimeError):
-        sender.send_one(con, cfg, SendingGmail(fail=True), item)
-    assert sender.next_item(con, cfg)["business_id"] == "b1"
+    with pytest.raises(requests.HTTPError):
+        sender.send_one(con, cfg, Rejected(), item)
+    assert sender.next_item(con, cfg)["business_id"] == "b1"  # surely not sent: back in the queue
     gm = SendingGmail()
     assert sender.send_one(con, cfg, gm, item).startswith("sent first")
     assert gm.sent == ["owner@clinic.in"]
+
+
+def test_unclear_send_error_keeps_the_claim(con, cfg):
+    _approved_first(con)
+    item = sender.next_item(con, cfg)
+    with pytest.raises(RuntimeError):
+        sender.send_one(con, cfg, SendingGmail(fail=True), item)  # may have gone out: a 5xx, a dropped connection
+    assert sender.next_item(con, cfg) is None  # held until the Sent-folder check settles it
 
 
 def test_stop_event_ends_the_run(con, cfg):
@@ -767,3 +783,89 @@ def test_dashboard_notes_a_run_cut_off_by_closing(home):
 def test_send_status_reloads_the_page_when_the_run_ends(client):
     r = client.get("/send/status")
     assert r.status_code == 200 and r.headers["HX-Refresh"] == "true"
+
+
+def test_only_one_sender_runs_at_a_time(con, cfg):
+    assert sender.take_lease(con, cfg.sending, "dashboard")
+    logs = []
+    sender.run(con, cfg, SendingGmail(), log=logs.append)
+    assert "Another sender is already running" in logs[0]
+    sender.drop_lease(con, "dashboard")
+    assert sender.take_lease(con, cfg.sending, "cli")
+
+
+def test_a_closed_senders_lease_is_taken_over(con, cfg):
+    old = (datetime.now(IST) - timedelta(hours=1)).isoformat(timespec="seconds")
+    con.execute("insert into meta (key, value) values ('sender_lease', ?)", (old + "|gone",))
+    con.commit()
+    assert sender.take_lease(con, cfg.sending, "cli")
+
+
+def test_same_name_with_different_phones_is_two_businesses(con, cfg):
+    from leadscout.scoring import score_all
+
+    _biz(con, "s1", "Sai Dental Clinic", 17.44, 78.38, phone="+919848012345", status="approved")
+    _biz(con, "s2", "Sai Dental Clinic", 17.40, 78.45, phone="+919848099999", status="approved")
+    score_all(con, cfg)
+    assert dict(con.execute("select business_id, status from leads").fetchall()) == {"s1": "approved", "s2": "approved"}
+
+
+def test_purge_keeps_leads_you_worked_on(con):
+    from leadscout.compliance import purge_stale
+
+    for bid, status in (("p1", "new"), ("p2", "won"), ("p3", "replied")):
+        con.execute("insert into businesses (id, source, name, fetched_at) values (?, 't', ?, '2025-01-01')", (bid, bid))
+        con.execute("insert into leads (business_id, score, status, updated_at) values (?, 50, ?, '2025-01-01')", (bid, status))
+    con.execute("update leads set quote_inr = 15000 where business_id = 'p3'")
+    con.commit()
+    assert purge_stale(con, 90) == 1
+    assert {r[0] for r in con.execute("select id from businesses")} == {"p2", "p3"}
+
+
+def test_a_bounce_is_not_an_opt_out_on_the_dashboard(con):
+    from leadscout.compliance import lead_is_suppressed
+
+    _seed_lead(con)
+    suppress(con, "owner@clinic.in", "bounced")
+    assert is_suppressed(con, "owner@clinic.in")  # sending still skips it
+    assert not lead_is_suppressed(con, "b1")  # but you can still mark the lead won after a phone call
+    suppress(con, "+919000000007", "opted_out")
+    con.execute("update businesses set phone = '+919000000007'")
+    assert lead_is_suppressed(con, "b1")  # a real "no" still counts
+
+
+def test_unknown_charset_falls_back_to_utf8():
+    from leadscout.audit.site import _codec
+
+    assert _codec("utf8mb4") == "utf-8" and _codec("none") == "utf-8" and _codec(None) == "utf-8"
+    assert _codec("ISO-8859-1") == "iso8859-1"
+
+
+def test_pitch_may_quote_template_facts_and_phone_formats(con, cfg):
+    from leadscout.pitch.jobs import unmeasured_numbers
+
+    _seed_lead(con)
+    con.execute("update businesses set phone = '+919848012345'")
+    con.commit()
+    body = "Google shut those sites down in 2024. Call 9848012345 or 09848012345."
+    assert unmeasured_numbers(con, cfg, "b1", {"subject": "Hi", "body": body}) == []
+    assert unmeasured_numbers(con, cfg, "b1", {"subject": "Hi", "body": "Seen by 5000 people."}) == ["5000"]
+
+
+def test_remove_our_old_address_is_not_a_no():
+    assert not NO_WORDS.search("Please remove our old address from the site and send a quote.")
+    assert NO_WORDS.search("Please remove me from your list.")
+    assert NO_WORDS.search("remove my email please")
+
+
+def test_unsubscribe_check_only_reads_new_mail(con, cfg):
+    calls = []
+
+    class Gm(FakeGmail):
+        def unsubscribe_requests(self, me, since=None):
+            calls.append(since)
+            return set()
+
+    sender.check_replies(con, cfg, Gm([]))
+    sender.check_replies(con, cfg, Gm([]))
+    assert calls[0] is None and calls[1] is not None

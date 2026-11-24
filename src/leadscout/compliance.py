@@ -40,12 +40,21 @@ def is_suppressed(con, *values: str | None) -> bool:
     return con.execute(f"select 1 from suppression where value_hash in ({marks})", hashes).fetchone() is not None
 
 
+def is_opted_out(con, *values: str | None) -> bool:
+    """Like is_suppressed, but a bounce doesn't count: a dead address says nothing about the person."""
+    hashes = [_hash(v) for v in values if v]
+    if not hashes:
+        return False
+    marks = ",".join("?" * len(hashes))
+    return con.execute(f"select 1 from suppression where reason != 'bounced' and value_hash in ({marks})", hashes).fetchone() is not None
+
+
 def lead_is_suppressed(con, business_id: str) -> bool:
-    """True if this lead's email or phone is on the opt-out list."""
+    """True if this lead said no (email or phone). Used by the dashboard; sending still skips bounced addresses too."""
     r = con.execute(
         "select l.email, b.phone from leads l join businesses b on b.id = l.business_id where l.business_id = ?", (business_id,)
     ).fetchone()
-    return bool(r) and is_suppressed(con, r["email"], r["phone"])
+    return bool(r) and is_opted_out(con, r["email"], r["phone"])
 
 
 def opt_out(con, value: str, reason: str) -> int:
@@ -88,10 +97,18 @@ def in_window(cfg_sending: dict, at: datetime | None = None) -> bool:
 
 
 def purge_stale(con, days: int) -> int:
-    """Delete businesses never contacted whose data is older than `days`."""
+    """Delete businesses never contacted whose data is older than `days`.
+
+    A lead you've moved on yourself (approved, replied, won, lost, opted out...) or put a deal amount on is kept,
+    even with no email sent: you may have reached them by phone or WhatsApp.
+    """
     cutoff = (datetime.now(IST) - timedelta(days=days)).isoformat(timespec="seconds")
     cur = con.execute(
-        "delete from businesses where fetched_at < ? and id not in (select business_id from outreach)", (cutoff,)
+        """delete from businesses where fetched_at < ? and id not in (select business_id from outreach)
+           and id not in (select business_id from leads
+                          where status not in ('new', 'drafted', 'excluded', 'hidden')
+                             or quote_inr is not null or paid_inr is not null)""",
+        (cutoff,),
     )
     con.commit()
     return cur.rowcount

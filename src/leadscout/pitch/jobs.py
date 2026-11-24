@@ -97,7 +97,11 @@ def unmeasured_numbers(con, cfg, business_id: str, pitch: dict) -> list[str]:
         return []
     known = json.dumps(dict(row), ensure_ascii=False, default=str)
     known += json.dumps({"sender": cfg.sender, "pitch": cfg.pitch}, ensure_ascii=False) + templates.OPT_OUT
-    allowed = _numbers(known) | {"100"}  # "31/100" for a speed score
+    allowed = _numbers(known) | {"100", str(templates.GOOGLE_SITES_CLOSED)}  # "31/100" for a speed score
+    for phone in (row["phone"], cfg.sender.get("phone")):
+        digits = re.sub(r"\D", "", phone or "")
+        if digits:
+            allowed |= {digits, digits[-10:], "0" + digits[-10:]}  # +91 98480 12345, 9848012345, 09848012345
     written = " ".join(str(pitch.get(k) or "") for k in ("subject", "body", "whatsapp"))
     return sorted(_numbers(written) - allowed, key=lambda n: (len(n), n))
 

@@ -91,14 +91,16 @@ class DuplicateFinder:
         name = name_key(r["name"])
         here = (r["lat"], r["lon"]) if r["lat"] is not None and r["lon"] is not None else None
         city = (r["city"] or "").strip().lower()
+        phone = r["phone"]
         same_name_nearby = any(
-            km_between(here, there) <= SAME_PLACE_KM if here and there else city == other_city
-            for there, other_city in self.names.get(name, [])
+            (km_between(here, there) <= SAME_PLACE_KM if here and there else city == other_city)
+            and not (phone and other_phone and phone != other_phone)  # "Sai Dental" twice, two phones: two clinics
+            for there, other_city, other_phone in self.names.get(name, [])
         )
         dup = same_name_nearby or bool(keys & self.keys)
         self.keys |= keys
         if name:
-            self.names.setdefault(name, []).append((here, city))
+            self.names.setdefault(name, []).append((here, city, phone))
         return dup
 
 

@@ -1,5 +1,6 @@
 """Fetch a business website and run the cheap checks PageSpeed doesn't do."""
 
+import codecs
 import re
 from datetime import date
 from urllib.parse import urljoin
@@ -77,7 +78,15 @@ async def fetch(client: httpx.AsyncClient, url: str, **kw) -> tuple[httpx.Respon
             body += chunk
             if len(body) >= MAX_BYTES:
                 break
-    return resp, bytes(body[:MAX_BYTES]).decode(resp.charset_encoding or "utf-8", errors="replace")
+    return resp, bytes(body[:MAX_BYTES]).decode(_codec(resp.charset_encoding), errors="replace")
+
+
+def _codec(name: str | None) -> str:
+    """The page's declared charset if Python knows it, else utf-8. Sites declare things like "utf8mb4" or "none"."""
+    try:
+        return codecs.lookup(name or "utf-8").name
+    except LookupError:
+        return "utf-8"
 
 
 async def _get(client: httpx.AsyncClient, url: str) -> tuple[httpx.Response | None, str, str | None]:

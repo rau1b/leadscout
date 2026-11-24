@@ -35,6 +35,8 @@ packages = ["src/leadscout"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Starlette's TestClient nags about httpx -> httpx2; harmless for tests, and not worth a new dependency yet.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
 
 [tool.ruff]
 line-length = 160
