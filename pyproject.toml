@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "respx>=0.21"]
+dev = ["pytest>=8", "respx>=0.21", "ruff>=0.15"]
 
 [project.scripts]
 leadscout = "leadscout.cli:app"
@@ -35,3 +35,17 @@ packages = ["src/leadscout"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Starlette's TestClient nags about httpx -> httpx2; harmless for tests, and not worth a new dependency yet.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+# Real errors only: syntax, undefined names, unused imports and variables, likely bugs. No style churn.
+select = ["E4", "E7", "E9", "F", "B"]
+
+# FastAPI's Form(...) and Typer's Option(...) defaults are the intended pattern.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Form", "typer.Option", "typer.Argument"]

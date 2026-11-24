@@ -30,7 +30,7 @@ Double-click **LeadScout** on your desktop. It opens the dashboard in your brows
 1. **Find leads** page: pick a city, optionally a neighbourhood, tick business types, press Find. It searches, checks websites and scores in the background (1 to 5 minutes). Any city or town in India works.
 2. Draft pitches (in a second PowerShell window): `.venv\Scripts\leadscout pitch --templates 50`, or `--prepare 50` and type `/pitch-today` in Claude Code.
 3. **Pitches** page: filter by area, read, edit, approve. Press **Wrong category** to hide a business that isn't what it claims to be.
-4. Send: `.venv\Scripts\leadscout send` and leave it running during 10:00-17:00 IST.
+4. Send: press **Start sending** on the dashboard's Today page (or run `.venv\Scripts\leadscout send`) and leave it running during 10:00-17:00 IST. Both follow the same caps and window. Only one sends at a time: if the other is already running, the second one says so and stops.
 5. **Replies** page: press **Check inbox**, open a reply, pick a ready answer (Price, Send mockup, Call, Examples, Not now), edit it and send. Fill in anything in [square brackets] first.
 6. **Deals**: on a lead, record what you quoted and what's been paid. The Deals page totals what you've won, received and are still owed.
 

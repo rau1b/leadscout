@@ -57,7 +57,7 @@ def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confiden
     duck.register("places", places)
     cur = duck.execute(QUERY, [min_confidence])
     cols = [d[0] for d in cur.description]
-    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
     terms = [c.strip().lower().replace(" ", "_") for c in categories if c.strip() and c.strip().lower() != "all"]
     # Also match the plain words ("dental clinic" -> "dental", "clinic").
     terms += [w for c in categories for w in c.lower().split() if len(w) > 3 and w != "all"]

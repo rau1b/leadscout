@@ -19,6 +19,11 @@ pitch_line = "I build fast, mobile-first websites for local businesses"
 window_start = "10:00"
 window_end = "17:00"
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+# No sending on these dates (YYYY-MM-DD). The national holidays are fixed; add the festival dates
+# for your region each year (Diwali, Holi, Eid, Pongal, Onam... move every year).
+skip_dates = ["2026-12-25", "2027-01-26", "2027-08-15", "2027-10-02", "2027-12-25"]
+# Most new WhatsApp chats the dashboard will open in a day (manual sends, from a separate number).
+whatsapp_daily_cap = 20
 min_gap_seconds = 180
 max_gap_seconds = 360
 # Daily cap for week 1, week 2, week 3 onward, counted from your first send.

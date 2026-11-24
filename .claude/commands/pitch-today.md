@@ -22,4 +22,4 @@ Rules (from docs/INDIA_RULES.md):
 Write the results to `data/pitch_results.json` as a JSON array:
 `[{"id": "<lead id>", "subject": "...", "body": "...", "whatsapp": "..."}]`
 
-Then run `.venv/Scripts/leadscout pitch --import` and tell me how many were imported. Don't send anything; I approve pitches in the dashboard.
+Then run `.venv/Scripts/leadscout pitch --import` and tell me how many were imported. The import sets aside any pitch containing a number that isn't in the lead's facts or the sender details. If some were set aside, rewrite just those from `data/pitch_results.rejected.json` without the listed numbers, write them to `data/pitch_results.json` again and re-run the import. Don't send anything; I approve pitches in the dashboard.

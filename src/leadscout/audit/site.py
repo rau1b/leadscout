@@ -1,5 +1,6 @@
 """Fetch a business website and run the cheap checks PageSpeed doesn't do."""
 
+import codecs
 import re
 from datetime import date
 from urllib.parse import urljoin
@@ -66,29 +67,51 @@ def check_html(html: str) -> dict:
     }
 
 
-async def _get(client: httpx.AsyncClient, url: str) -> tuple[httpx.Response | None, str | None]:
-    """Fetch, telling a dead domain apart from a slow server or a certificate quirk."""
+MAX_BYTES = 2_000_000  # enough for any real home page; stops one huge file from stalling a search
+
+
+async def fetch(client: httpx.AsyncClient, url: str, **kw) -> tuple[httpx.Response, str]:
+    """GET at most MAX_BYTES of the body and decode it. Returns (response, text)."""
+    async with client.stream("GET", url, **kw) as resp:
+        body = bytearray()
+        async for chunk in resp.aiter_bytes():
+            body += chunk
+            if len(body) >= MAX_BYTES:
+                break
+    return resp, bytes(body[:MAX_BYTES]).decode(_codec(resp.charset_encoding), errors="replace")
+
+
+def _codec(name: str | None) -> str:
+    """The page's declared charset if Python knows it, else utf-8. Sites declare things like "utf8mb4" or "none"."""
     try:
-        return await client.get(url), None
+        return codecs.lookup(name or "utf-8").name
+    except LookupError:
+        return "utf-8"
+
+
+async def _get(client: httpx.AsyncClient, url: str) -> tuple[httpx.Response | None, str, str | None]:
+    """Fetch, telling a dead domain apart from a slow server or a certificate quirk. Returns (response, text, error)."""
+    try:
+        return *(await fetch(client, url)), None
     except httpx.ConnectError as e:
         msg = str(e).lower()
         if "getaddrinfo" in msg or "name or service not known" in msg or "nodename nor servname" in msg:
-            return None, "dns"  # the domain no longer resolves: expired or never set up
+            return None, "", "dns"  # the domain no longer resolves: expired or never set up
         if "certificate" in msg or "ssl" in msg:
             # Often a missing intermediate certificate that browsers work around; load it anyway.
             async with httpx.AsyncClient(headers=client.headers, follow_redirects=True, timeout=20, verify=False) as insecure:
                 try:
-                    return await insecure.get(url), None
+                    return *(await fetch(insecure, url)), None
                 except httpx.HTTPError:
-                    return None, "ssl"
-        return None, "connect"
+                    return None, "", "ssl"
+        return None, "", "connect"
     except httpx.TimeoutException:
         try:
-            return await client.get(url, timeout=45), None
+            return *(await fetch(client, url, timeout=45)), None
         except httpx.HTTPError:
-            return None, "timeout"
+            return None, "", "timeout"
     except httpx.HTTPError as e:
-        return None, type(e).__name__
+        return None, "", type(e).__name__
 
 
 async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
@@ -96,7 +119,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
     if "://" not in url:
         url = "http://" + url
     result = {"site_class": "broken", "final_url": None, "status_code": None, "https": 0, "found_emails": set()}
-    resp, err = await _get(client, url)
+    resp, text, err = await _get(client, url)
     if resp is None:
         result["fetch_error"] = err
         return result
@@ -112,7 +135,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
     if "html" not in resp.headers.get("content-type", "html"):
         result["site_class"] = "real"
         return result
-    checks = check_html(resp.text)
+    checks = check_html(text)
     emails = checks.pop("emails")
     parked = checks.pop("parked")
     result.update(checks)
@@ -121,11 +144,11 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
     if not emails and not parked:
         for path in ("contact", "contact-us", "contactus"):
             try:
-                r2 = await client.get(urljoin(str(resp.url), path))
+                r2, text2 = await fetch(client, urljoin(str(resp.url), "/" + path))  # from the site root, not the current folder
             except httpx.HTTPError:
                 continue
             if r2.status_code < 400:
-                emails = extract_emails(r2.text, BeautifulSoup(r2.text, "html.parser"))
+                emails = extract_emails(text2, BeautifulSoup(text2, "html.parser"))
                 if emails:
                     break
     result["found_emails"] = emails

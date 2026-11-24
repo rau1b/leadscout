@@ -6,8 +6,9 @@ from fastapi import Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from leadscout import config, db
+from leadscout.compliance import lead_is_suppressed
 from leadscout.db import now
-from leadscout.web.app import app, ctx, lead_row, tpl
+from leadscout.web.app import app, ctx, lead_row, sending_ctx, tpl
 
 # ---- Replies -------------------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ def _gmail():
     try:
         return Gmail()
     except RuntimeError as e:
-        raise ValueError("Gmail isn't connected yet. Run `leadscout gmail-login` once, then try again.") from e
+        raise ValueError(str(e)) from e  # not logged in, or the login expired: the message says what to run
 
 
 @app.post("/replies/check")
@@ -70,6 +71,60 @@ def send_reply_route(lead_id: str, body: str = Form(...)):
     return RedirectResponse(f"/leads/{lead_id}?saved=replied#reply", status_code=303)
 
 
+# ---- Sending from the dashboard ------------------------------------------------------------
+
+
+@app.post("/send/start")
+def send_start():
+    from leadscout.web import sending
+
+    con = db.connect()
+    why = sending.block_reason(con, config.load())
+    if why:  # the button is disabled then, but check here too
+        return RedirectResponse(f"/?msg={quote(why)}", status_code=303)
+    try:
+        gm = _gmail()
+    except ValueError as e:
+        return RedirectResponse(f"/?msg={quote(str(e))}", status_code=303)
+    msg = "Sending started. It stops by itself at the daily cap, the end of the window or a bounce spike." if sending.start(gm) else "Already sending."
+    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
+
+
+@app.post("/send/stop")
+def send_stop():
+    from leadscout.web import sending
+
+    sending.stop()
+    return RedirectResponse(f"/?msg={quote('Stopping. Nothing more goes out after the email in hand.')}", status_code=303)
+
+
+@app.get("/send/status", response_class=HTMLResponse)
+def send_status(request: Request):
+    """The sending block alone, polled while a run is going. When the run ends, reload the page to update the slots."""
+    from leadscout.web import sending
+
+    con = db.connect()
+    resp = tpl.TemplateResponse(request, "_sending.html", {"request": request, **sending_ctx(con, config.load())})
+    if not sending.running():
+        resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
+@app.post("/send/resolve")
+def send_resolve():
+    from leadscout.mailer.sender import resolve_stuck
+
+    con = db.connect()
+    try:
+        counts = resolve_stuck(con, _gmail())
+    except ValueError as e:
+        return RedirectResponse(f"/?msg={quote(str(e))}", status_code=303)
+    except Exception:
+        return RedirectResponse(f"/?msg={quote('Could not reach Gmail. Nothing was changed; try again in a minute.')}", status_code=303)
+    msg = f"Checked Gmail: {counts['recorded']} had gone out and are now recorded, {counts['released']} had not and are back in the queue."
+    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
+
+
 # ---- Deals ---------------------------------------------------------------------------------
 
 def rupees(text: str) -> int | None:
@@ -85,7 +140,7 @@ def save_deal(lead_id: str, quote_inr: str = Form(""), paid_inr: str = Form(""),
         "update leads set quote_inr = ?, paid_inr = ?, deal_note = ?, updated_at = ? where business_id = ?",
         (rupees(quote_inr), rupees(paid_inr), deal_note.strip() or None, now(), lead_id),
     )
-    if status in ("won", "lost", "replied"):
+    if status in ("won", "lost", "replied") and not lead_is_suppressed(con, lead_id):
         con.execute(
             "update leads set status = ?, won_at = case when ? = 'won' then ? else won_at end where business_id = ?",
             (status, status, now(), lead_id),
@@ -144,7 +199,14 @@ def hide(lead_id: str, back: str = Form("")):
         (now(), lead_id),
     )
     con.commit()
-    return RedirectResponse(back if back.startswith("/") else f"/leads/{lead_id}", status_code=303)
+    return RedirectResponse(local_path(back) or f"/leads/{lead_id}", status_code=303)
+
+
+def local_path(url: str) -> str | None:
+    """`url` if it stays on this dashboard. "//evil.in" and "/\\evil.in" are other sites to a browser."""
+    if url.startswith("/") and not url.startswith(("//", "/\\")) and "\\" not in url:
+        return url
+    return None
 
 
 @app.post("/leads/{lead_id}/unhide")

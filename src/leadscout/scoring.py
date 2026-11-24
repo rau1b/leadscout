@@ -1,10 +1,13 @@
 """Lead score 0-100 = need for a website + ability to pay, with plain-English reasons."""
 
 import json
+import math
+import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 from leadscout import emailcheck
+from leadscout.audit.classify import FREE_HOSTS
 from leadscout.audit.site import is_outdated
 from leadscout.compliance import is_suppressed
 from leadscout.db import jload, now
@@ -54,12 +57,59 @@ def site_need(a) -> tuple[int, list[str]]:
     return min(pts, 70), why
 
 
+# Which copy of a duplicated place to keep: the one furthest along with you. Opted-out, bounced and lost
+# rank high too, so their twin listing never gets pitched instead.
+STATUS_RANK = {"won": 9, "replied": 8, "contacted": 7, "opted_out": 7, "bounced": 7, "lost": 7, "approved": 5,
+               "drafted": 4, "hidden": 3, "new": 1, "excluded": 0}
+SAME_PLACE_KM = 15  # the same name this close is the same business (branches get one pitch, not two)
+
+
+def name_key(name: str | None) -> str:
+    """"Rajrudra Developers." and "rajrudra  developers" are the same name."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).split())
+
+
+def km_between(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+class DuplicateFinder:
+    """Remembers kept leads; a later listing with the same phone, own website, or name nearby is a duplicate."""
+
+    def __init__(self):
+        self.keys: set[tuple] = set()
+        self.names: dict[str, list[tuple]] = {}
+
+    def seen_before(self, r, site_domain: str) -> bool:
+        keys = set()
+        if r["phone"]:
+            keys.add(("phone", r["phone"]))
+        if site_domain and site_domain not in FREE_HOSTS and not domain_in(r["website"], SOCIAL_DOMAINS + DIRECTORY_DOMAINS):
+            keys.add(("site", site_domain))
+        name = name_key(r["name"])
+        here = (r["lat"], r["lon"]) if r["lat"] is not None and r["lon"] is not None else None
+        city = (r["city"] or "").strip().lower()
+        phone = r["phone"]
+        same_name_nearby = any(
+            (km_between(here, there) <= SAME_PLACE_KM if here and there else city == other_city)
+            and not (phone and other_phone and phone != other_phone)  # "Sai Dental" twice, two phones: two clinics
+            for there, other_city, other_phone in self.names.get(name, [])
+        )
+        dup = same_name_nearby or bool(keys & self.keys)
+        self.keys |= keys
+        if name:
+            self.names.setdefault(name, []).append((here, city, phone))
+        return dup
+
+
 def chain_domains(con, min_count: int = 3) -> set[str]:
     """Domains used by several listings are chains, hospitals or aggregators: skip them."""
     counts = Counter()
     for (w,) in con.execute("select website from businesses where website is not null"):
-        if not domain_in(w, SOCIAL_DOMAINS + DIRECTORY_DOMAINS):
-            counts[domain(w)] += 1
+        if not domain_in(w, SOCIAL_DOMAINS + DIRECTORY_DOMAINS) and domain(w) not in FREE_HOSTS:
+            counts[domain(w)] += 1  # sites.google.com etc. host many unrelated businesses
     return {d for d, n in counts.items() if n >= min_count}
 
 
@@ -76,22 +126,14 @@ def score_all(con, cfg) -> dict:
     domains = {e.rsplit("@", 1)[1].lower() for r in rows for e in jload(r["emails"]) + jload(r["found_emails"]) if "@" in e}
     with ThreadPoolExecutor(max_workers=32) as pool:
         list(pool.map(emailcheck.domain_accepts_mail, domains))
-    stats = Counter()
-    seen: set[tuple] = set()
-    # Best-confidence record first, so a duplicate listing is the one excluded.
-    rows = sorted(rows, key=lambda r: -(r["confidence"] or 0))
+    leads = []
     for r in rows:
-        dup_key = (" ".join((r["name"] or "").lower().split()), r["phone"] or r["website"] or r["id"])
-        is_dup = dup_key in seen
-        seen.add(dup_key)
         cat = f"{r['category'] or ''} {r['category_path'] or ''}".lower()
         site_domain = domain(r["website"])
         candidates = jload(r["emails"]) + jload(r["found_emails"])
         email = emailcheck.best_email(candidates, site_domain) if candidates else None
         excluded = None
-        if is_dup:
-            excluded = "Duplicate listing"
-        elif any(x in cat for x in sc["excluded"]):
+        if any(x in cat for x in sc["excluded"]):
             excluded = "Category not worth pitching"
         elif r["brand"]:
             excluded = f"Brand/chain ({r['brand']})"
@@ -112,12 +154,23 @@ def score_all(con, cfg) -> dict:
             reasons.append("Email address found")
         if r["phone_type"] == "mobile":
             value += 5
-        score = min(100, need + value)
-        if excluded:
-            score, reasons = 0, [excluded]
+        leads.append({"r": r, "email": email, "excluded": excluded, "score": min(100, need + value), "reasons": reasons,
+                      "site": site_domain})
+
+    # One place, one lead. Keep the copy you've already worked on, else the best lead; the rest are duplicates.
+    leads.sort(key=lambda x: (-STATUS_RANK.get(x["r"]["lead_status"], 0), x["excluded"] is not None, -x["score"],
+                              x["email"] is None, -(x["r"]["confidence"] or 0)))
+    finder = DuplicateFinder()
+    stats = Counter()
+    for x in leads:
+        r = x["r"]
+        is_dup = finder.seen_before(r, x["site"])
+        excluded = "Duplicate listing" if is_dup else x["excluded"]
+        score, reasons = (0, [excluded]) if excluded else (x["score"], x["reasons"])
 
         status = r["lead_status"]
-        if status in (None, "new", "excluded"):
+        if status in (None, "new", "excluded") or (is_dup and status in ("drafted", "approved")):
+            # A duplicate's draft is dropped too: nothing was sent, and its twin carries on.
             status = "excluded" if excluded or score < sc["min_score"] else "new"
         stats[status] += 1
         con.execute(
@@ -126,7 +179,7 @@ def score_all(con, cfg) -> dict:
                on conflict(business_id) do update set score = excluded.score, reasons = excluded.reasons,
                    status = excluded.status, email = excluded.email, email_ok = excluded.email_ok,
                    updated_at = excluded.updated_at""",
-            (r["id"], score, json.dumps(reasons), status, email, int(bool(email)), now()),
+            (r["id"], score, json.dumps(reasons), status, x["email"], int(bool(x["email"])), now()),
         )
     con.commit()
     return dict(stats)
