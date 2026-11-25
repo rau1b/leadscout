@@ -60,6 +60,8 @@ STATUS_LABELS = {
     "won": "Won", "lost": "Lost", "opted_out": "Opted out", "bounced": "Bounced", "excluded": "Excluded", "hidden": "Hidden",
 }
 tpl.env.globals.update(status_labels=STATUS_LABELS, site_labels=LABELS)
+# Changes with the files, so a browser never keeps an old app.js or app.css after an update.
+tpl.env.globals["asset_v"] = max(int(f.stat().st_mtime) for f in (HERE / "static").glob("app.*"))
 tpl.env.filters["nicecat"] = lambda c: (c or "").replace("_", " ").capitalize()
 tpl.env.filters["fromjson"] = lambda s: __import__("json").loads(s) if s else {}
 tpl.env.filters["hm"] = lambda s: s[11:16] if s else ""
