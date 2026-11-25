@@ -152,3 +152,11 @@ def test_migration_another_process_applied_is_skipped(tmp_path, monkeypatch):
     con = db.connect(path)
     assert _version(con) == 2
     assert [r[1] for r in con.execute("pragma table_info(t)")] == ["a", "b"]
+
+
+def test_migration_numbers_are_unique_and_run_1_to_n():
+    """Two tracks add migrations in parallel: the one merged second must be renumbered, never share a number or leave a gap."""
+    files = sorted(p.name for p in db.MIGRATIONS.glob("*.sql"))
+    numbers = [int(name.split("_")[0]) for name in files]
+    assert all(name[:4].isdigit() and name[4] == "_" for name in files), files  # NNNN_name.sql, or connect() would skip it
+    assert numbers == list(range(1, len(files) + 1)), files
