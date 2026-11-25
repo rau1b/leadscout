@@ -57,8 +57,9 @@ Last checked: 21 Nov 2026.
   - Collect the minimum: business name, category, address, public phone, public email, website. No personal social profiles, no home addresses.
   - Store locally only. Never sell, share or upload lead lists.
   - **Opt-outs are permanent and immediate.** One reply of "no", "stop" or "not interested" puts the number/email on the suppression list.
-  - Delete on request: `leadscout forget <phone|email>` removes all their data and keeps only a hashed suppression entry.
+  - Delete on request: `leadscout forget <phone|email>` removes all their data, from the live database and from every backup in `data/backups/`, and keeps only a hashed suppression entry (in the backups too, so a restored copy still blocks them). If a backup can't be opened, the command names it so you can delete it by hand.
   - Retention: businesses you never contacted are deleted after 90 days (`[retention]` in `config.toml`). The dashboard does this once a day when it starts; `leadscout purge` runs it by hand.
+  - Backups in `data/backups/` (one a day, plus one before each upgrade) are deleted after 14 days (`[backups] keep_days`), so data the purge removes is gone from backups within that time too.
 
 ### Where the data comes from
 

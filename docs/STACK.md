@@ -40,6 +40,7 @@ leadscout check-replies          # replies, "no thanks" opt-outs, bounces
 leadscout optout <email|phone>   # never contact again
 leadscout forget <email|phone>   # delete everything, keep hashed opt-out
 leadscout purge                  # delete never-contacted data older than 90 days
+leadscout backup                 # copy the database to data/backups/ now
 leadscout export leads.csv
 ```
 
@@ -63,14 +64,24 @@ The schema lives in numbered SQL files in `src/leadscout/migrations/`. `db.conne
 
 To change the schema, add the next file, for example `0003_add_lead_tags.sql`, holding plain SQL (`create table`, `alter table ... add column`, `create index`). Never edit a migration that has already shipped; write a new one. Add a test in `tests/test_migrations.py` if the migration moves data.
 
-Before migrating a database that already has tables, LeadScout saves a copy to `data/backups/leadscout-<timestamp>-v<old version>.db`. A database from before numbered migrations (version 0) gets the old `_migrate()` fix-ups once and then becomes version 1. Backups keep data that `leadscout forget` and the retention purge later delete, so delete them once the new version works.
+A database from before numbered migrations (version 0) gets the old `_migrate()` fix-ups once, in the same transaction as `0001`, and then becomes version 1. Each migration runs under `BEGIN IMMEDIATE` and re-reads `user_version` inside it, so when two processes start together only one of them applies it.
+
+## Backups
+
+`backups.py` copies the database into `data/backups/` with sqlite's backup API (a plain file copy can miss recent writes while WAL is on):
+
+- `leadscout-<YYYYmmdd-HHMMSS>-v<old version>.db` before every migration;
+- `...-nightly.db` once per IST day, made when the dashboard starts;
+- `...-manual.db` whenever you run `leadscout backup`.
+
+Copies older than `[backups] keep_days` (14 by default) are deleted after each backup and by the daily purge; the age comes from the timestamp in the name. `leadscout forget` also removes the person from every backup and adds the hashed opt-out entry to it; any backup it can't open is named in its message. To restore, stop the dashboard and copy a backup over `data/leadscout.db`.
 
 ## Layout
 
 ```
 src/leadscout/
   cli.py, config.py, db.py, compliance.py, scoring.py, emailcheck.py
-  migrations/ 0001_baseline.sql, ... (numbered schema changes)
+  migrations/ 0001_baseline.sql, ... (numbered schema changes); backups.py
   sources/   geo.py (Nominatim), overture.py, csv_import.py, common.py
   audit/     classify.py, site.py, pagespeed.py, __init__.py (runner)
   pitch/     templates.py, jobs.py (Claude Code hand-off)
