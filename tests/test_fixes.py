@@ -551,9 +551,18 @@ def test_broken_certificate_reason_and_pitch(cfg):
     a = {"site_class": "real", "fetch_error": "bad_certificate", "https": 0, "perf_score": 80, "lcp_s": 2.0,
          "viewport": 1, "copyright_year": 2026, "has_whatsapp": 1, "has_tel": 1}
     pts, why = site_need(a)
-    assert pts > 0 and any("security warning" in w for w in why) and not any("No HTTPS" in w for w in why)
-    body = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)["body"]
-    assert "browsers show a security warning" in body and "Not secure" not in body
+    assert pts > 0 and "Security certificate has a problem (some browsers and phones may warn visitors)" in why
+    assert not any("No HTTPS" in w for w in why)
+    pitch = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)
+    assert "its security certificate has a problem, so some browsers and phones may warn visitors" in pitch["body"]
+    assert "Not secure" not in pitch["body"]
+    # Chrome often works around the commonest certificate fault, so never claim every browser warns.
+    from leadscout.web.app import headline
+
+    head = headline({**a, "website": "https://clinic.in"})
+    assert head == "Certificate problem, some browsers may warn"
+    for text in [*why, head, pitch["subject"], pitch["body"], pitch["whatsapp"]]:
+        assert "browsers show" not in text.lower() and "security warning" not in text.lower()
 
 
 # ---- 11. stop() only kills our own dashboard -----------------------------------------------
