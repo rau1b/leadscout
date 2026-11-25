@@ -91,3 +91,64 @@ def test_log_event_and_forget_deletes_events(tmp_path, monkeypatch):
 
     assert forget(con, "a@shop.in") == 1
     assert [r[0] for r in con.execute("select business_id from events order by id")] == ["b", None]
+
+
+def _old_database(path):
+    """A database from before numbered migrations: tables exist, user_version is 0."""
+    old = sqlite3.connect(path)
+    old.executescript("""
+        create table businesses (id text primary key, source text not null, name text not null, area text, fetched_at text not null);
+        insert into businesses values ('x', 'overture', 'Old Dental', 'Kukatpally, Hyderabad', '2026-11-01');
+    """)
+    old.close()
+
+
+def test_threads_connecting_at_once_migrate_once(tmp_path):
+    import threading
+
+    path = tmp_path / "leadscout.db"
+    _old_database(path)
+    start, errors = threading.Barrier(8), []
+
+    def worker():
+        start.wait()
+        try:
+            db.connect(path).execute("select count(*) from businesses").fetchone()
+        except Exception as e:  # noqa: BLE001 - reported below
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert _version(sqlite3.connect(path)) == db.migrations()[-1][0]
+    assert len(list((tmp_path / "backups").glob("*-v0.db"))) == 1
+
+
+def test_migration_another_process_applied_is_skipped(tmp_path, monkeypatch):
+    """Between reading user_version and taking the write lock, another process may migrate the same file."""
+    from leadscout import backups
+
+    path = tmp_path / "t.db"
+    one, two = tmp_path / "0001_t.sql", tmp_path / "0002_t.sql"
+    one.write_text("create table t (a);", encoding="utf-8")
+    two.write_text("alter table t add column b;", encoding="utf-8")  # fails if run twice
+    monkeypatch.setattr(db, "migrations", lambda: [(1, one)])
+    db.connect(path).close()
+
+    monkeypatch.setattr(db, "migrations", lambda: [(1, one), (2, two)])
+    real_backup = backups.backup_now
+
+    def other_process_migrates_first(con, p, reason):
+        out = real_backup(con, p, reason)
+        monkeypatch.setattr(backups, "backup_now", real_backup)  # only once
+        db._upgrade(sqlite3.connect(p), p)
+        return out
+
+    monkeypatch.setattr(backups, "backup_now", other_process_migrates_first)
+    db._ready.clear()
+    con = db.connect(path)
+    assert _version(con) == 2
+    assert [r[1] for r in con.execute("pragma table_info(t)")] == ["a", "b"]

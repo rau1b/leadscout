@@ -52,3 +52,7 @@ excluded = [
 
 [retention]
 purge_uncontacted_after_days = 90
+
+[backups]
+# Copies in data/backups/ (one a day, one before each upgrade) are deleted after this many days.
+keep_days = 14

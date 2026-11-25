@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -21,21 +22,28 @@ def now() -> str:
 MIGRATIONS = Path(__file__).parent / "migrations"
 
 # Database files already migrated in this process. The dashboard connects on every request, so the
-# migrations run once per file instead of on every page load.
+# migrations run once per file instead of on every page load. The lock stops two dashboard threads migrating at once.
 _ready: set[str] = set()
+_ready_lock = threading.Lock()
+
+
+def default_path() -> Path:
+    return data_dir() / "leadscout.db"
 
 
 def connect(path=None) -> sqlite3.Connection:
-    path = Path(path or data_dir() / "leadscout.db").resolve()
-    fresh = str(path) not in _ready or not path.exists()
+    path = Path(path or default_path()).resolve()
+    missing = not path.exists()
     # The dashboard's search worker writes while pages read: wait for locks instead of failing, and use WAL.
     con = sqlite3.connect(path, timeout=30, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("pragma foreign_keys = on")
-    if fresh:
-        con.execute("pragma journal_mode = wal")  # stored in the file, so once is enough
-        _upgrade(con, path)
-        _ready.add(str(path))
+    if missing or str(path) not in _ready:
+        with _ready_lock:
+            if missing or str(path) not in _ready:  # another thread may have migrated it while we waited
+                con.execute("pragma journal_mode = wal")  # stored in the file, so once is enough
+                _upgrade(con, path)
+                _ready.add(str(path))
     return con
 
 
@@ -44,35 +52,42 @@ def migrations() -> list[tuple[int, Path]]:
     return sorted((int(p.name.split("_")[0]), p) for p in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
 
 
+def _has_tables(con) -> bool:
+    return con.execute("select 1 from sqlite_master where type = 'table'").fetchone() is not None
+
+
 def _upgrade(con, path: Path) -> None:
     """Apply pending migrations in order, each in its own transaction; `pragma user_version` is the last one applied."""
+    from leadscout import backups
+
     version = con.execute("pragma user_version").fetchone()[0]
     pending = [(n, p) for n, p in migrations() if n > version]
     if not pending:
         return
-    if con.execute("select 1 from sqlite_master where type = 'table'").fetchone():
-        _backup(con, path, version)
-        if version == 0:
-            # Made before numbered migrations: _migrate() adds the columns 0001 already has, then 0001's
-            # "create table if not exists" adds only the tables this file lacks, as the old schema script did.
-            _migrate(con)
-    for n, p in pending:
-        try:
-            con.executescript(f"begin;\n{p.read_text(encoding='utf-8')}\n;pragma user_version = {n};\ncommit;")
-        except Exception:
-            if con.in_transaction:
-                con.rollback()
-            raise
-
-
-def _backup(con, path: Path, version: int) -> None:
-    """Copy the database before migrating it. sqlite's backup API, because with WAL the file alone can be stale."""
-    folder = path.parent / "backups"
-    folder.mkdir(exist_ok=True)
-    dest = sqlite3.connect(folder / f"{path.stem}-{datetime.now(IST):%Y%m%d-%H%M%S}-v{version}.db")
-    with dest:
-        con.backup(dest)
-    dest.close()
+    if _has_tables(con):
+        backups.backup_now(con, path, f"v{version}")
+    # autocommit=True: we control the transactions, and executescript() won't commit one behind our back.
+    mig = sqlite3.connect(path, timeout=30, autocommit=True)
+    try:
+        for n, p in pending:
+            mig.execute("begin immediate")  # takes the write lock, so another process can't migrate in between
+            try:
+                current = mig.execute("pragma user_version").fetchone()[0]
+                if current < n:  # else another process applied it while we waited; alter table can't run twice
+                    if current == 0 and _has_tables(mig):
+                        # Made before numbered migrations: _migrate() adds the columns 0001 already has, then 0001's
+                        # "create table if not exists" adds only the tables this file lacks, as the old schema script did.
+                        # Its commit() calls do nothing on an autocommit=True connection, so it stays in this transaction.
+                        _migrate(mig)
+                    mig.executescript(p.read_text(encoding="utf-8"))
+                    mig.execute(f"pragma user_version = {n}")
+                mig.execute("commit")
+            except BaseException:
+                if mig.in_transaction:
+                    mig.execute("rollback")
+                raise
+    finally:
+        mig.close()
 
 
 def _migrate(con) -> None:

@@ -58,6 +58,10 @@ class Config:
         return self.raw.get("retention", {"purge_uncontacted_after_days": 90})
 
     @property
+    def backups(self) -> dict:
+        return {"keep_days": 14} | self.raw.get("backups", {})
+
+    @property
     def google_api_key(self) -> str:
         return os.environ.get("GOOGLE_API_KEY", "")
 
