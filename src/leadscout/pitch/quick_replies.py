@@ -44,8 +44,11 @@ def all_replies(cfg) -> dict[str, str]:
 def fill(text: str, lead: dict, cfg) -> str:
     s = cfg.sender
     # A blank detail becomes a [bracket], so the dashboard makes you fill it in before sending.
-    body = text.format(name=lead["name"], sender=s.get("name") or s["business"],
-                       phone=s.get("phone") or "[your phone]", portfolio=s.get("portfolio") or "[link to your work]")
+    try:
+        body = text.format(name=lead["name"], sender=s.get("name") or s["business"],
+                           phone=s.get("phone") or "[your phone]", portfolio=s.get("portfolio") or "[link to your work]")
+    except (KeyError, IndexError, ValueError, AttributeError):
+        body = text  # stray { } in a custom reply: show it as written rather than crash the lead page
     return f"{body}\n\n{signature(s).removeprefix('Regards,').strip()}"
 
 

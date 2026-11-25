@@ -4,7 +4,7 @@ import random
 import time
 from datetime import date, datetime, timedelta
 
-from leadscout.compliance import in_window, is_suppressed, opt_out, suppress
+from leadscout.compliance import in_window, is_opted_out, is_suppressed, opt_out, suppress
 from leadscout.config import IST
 from leadscout.db import get_meta, now, set_meta
 from leadscout.pitch import templates
@@ -165,7 +165,10 @@ def resolve_stuck(con, gmail) -> dict:
         found = gmail.sent_to(c["email"], datetime.fromisoformat(c["claimed_at"]))
         if found:
             if c["kind"] == "first":
-                con.execute("update leads set status = 'contacted', updated_at = ? where business_id = ? and status = 'approved'", (now(), c["business_id"]))
+                con.execute(  # 'send_failed' too: the error came after Gmail had already taken it
+                    "update leads set status = 'contacted', updated_at = ? where business_id = ? and status in ('approved', 'send_failed')",
+                    (now(), c["business_id"]),
+                )
             con.execute(
                 "insert into outreach (business_id, channel, kind, to_addr, gmail_id, thread_id, sent_at) values (?, 'email', ?, ?, ?, ?, ?)",
                 (c["business_id"], c["kind"], c["email"], found["id"], found["threadId"], c["claimed_at"]),
@@ -185,7 +188,7 @@ def check_replies(con, cfg, gmail) -> dict:
         """select l.business_id, l.email, l.status, o.thread_id, b.phone from leads l
            join businesses b on b.id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
-           where l.status in ('contacted', 'replied', 'won')"""
+           where l.status in ('contacted', 'replied', 'won', 'send_failed')"""
     ).fetchall()
     for r in rows:
         for m in gmail.incoming(r["thread_id"], cfg.sender["email"]):
@@ -197,8 +200,10 @@ def check_replies(con, cfg, gmail) -> dict:
             if not cur.rowcount:
                 continue  # already saved
             counts[m["kind"]] += 1
+            if r["status"] == "won":
+                continue  # a paying customer: never auto-opt-out; the saved reply shows it, you decide
             # A first answer moves the lead on; a later "no" always wins.
-            if m["kind"] in ("opted_out", "bounced") or r["status"] == "contacted":
+            if m["kind"] in ("opted_out", "bounced") or r["status"] in ("contacted", "send_failed"):
                 con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (m["kind"], now(), r["business_id"]))
             if m["kind"] in ("opted_out", "bounced"):
                 suppress(con, r["email"], m["kind"])
@@ -212,7 +217,7 @@ def check_replies(con, cfg, gmail) -> dict:
     ask = getattr(gmail, "unsubscribe_requests", lambda _me, since=None: set())
     found = ask(cfg.sender["email"], since=datetime.fromisoformat(last) if last else None)
     for addr in found or ():
-        if not is_suppressed(con, addr):
+        if not is_opted_out(con, addr):  # a bounced address that unsubscribes becomes an opt-out
             opt_out(con, addr, "unsubscribe button")
             counts["opted_out"] += 1
     if found is not None:
@@ -244,11 +249,21 @@ def send_reply(con, cfg, gmail, business_id: str, body: str) -> None:
     con.commit()
 
 
+MAX_FAILS_IN_A_ROW = 3  # more than this looks like Gmail or the network, not one bad lead
 LEASE_KEY = "sender_lease"
 
 
 def _lease_stale_after(sc) -> timedelta:
     return timedelta(seconds=sc["max_gap_seconds"]) + timedelta(minutes=5)  # a live sender beats more often than this
+
+
+def _stale(at: str, sc) -> bool:
+    return not at or datetime.fromisoformat(at) < datetime.now(IST) - _lease_stale_after(sc)
+
+
+def lease_held(con, sc) -> bool:
+    """True while a sender run (`leadscout send` or the dashboard's) holds a live lease."""
+    return not _stale((get_meta(con, LEASE_KEY) or "").partition("|")[0], sc)
 
 
 def take_lease(con, sc, owner: str) -> bool:
@@ -260,8 +275,7 @@ def take_lease(con, sc, owner: str) -> bool:
         return True
     old = get_meta(con, LEASE_KEY) or ""
     at, _, holder = old.partition("|")
-    stale = not at or datetime.fromisoformat(at) < datetime.now(IST) - _lease_stale_after(sc)
-    if holder != owner and not stale:
+    if holder != owner and not _stale(at, sc):
         return False
     took = con.execute("update meta set value = ? where key = ? and value = ?", (stamp, LEASE_KEY, old)).rowcount
     con.commit()
@@ -273,11 +287,12 @@ def drop_lease(con, owner: str) -> None:
     con.commit()
 
 
-def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None) -> None:
+def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None, reload=None) -> None:
     """Send until the cap, the window, the bounce limit or the queue stops it. `stop` (a threading.Event) ends it early.
-    Only one run sends at a time, whether from `leadscout send` or the dashboard."""
+    Only one run sends at a time, whether from `leadscout send` or the dashboard. `reload` (e.g. config.load) is
+    called before each email, so a change on the Settings page applies to a run that's already going."""
     if dry_run:
-        return _run(con, cfg, gmail, dry_run, once, log, stop)
+        return _run(con, cfg, gmail, dry_run, once, log, stop, reload=reload)
     import os
     import threading
 
@@ -286,14 +301,18 @@ def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, s
         log("Another sender is already running (leadscout send or the dashboard). Stop that one first.")
         return
     try:
-        return _run(con, cfg, gmail, dry_run, once, log, stop, lambda: take_lease(con, cfg.sending, owner))
+        return _run(con, cfg, gmail, dry_run, once, log, stop, lambda: take_lease(con, cfg.sending, owner), reload)
     finally:
         drop_lease(con, owner)
 
 
-def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
+def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True, reload=None) -> None:
     sc = cfg.sending
+    fails = 0
     while True:
+        if reload is not None:
+            cfg = reload()
+            sc = cfg.sending
         if not renew():
             log("Another sender took over. Stopping.")
             return
@@ -320,7 +339,22 @@ def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
         if not item:
             log("Nothing left to send. Approve more pitches in the dashboard.")
             return
-        log(f"[{done + 1}/{cap}] " + send_one(con, cfg, gmail, item, dry_run))
+        try:
+            log(f"[{done + 1}/{cap}] " + send_one(con, cfg, gmail, item, dry_run))
+            fails = 0
+        except Exception as e:
+            # Mark it so the same lead isn't picked first again on every run.
+            con.rollback()
+            con.execute("update leads set status = 'send_failed', updated_at = ? where business_id = ?", (now(), item["business_id"]))
+            con.commit()
+            fails += 1
+            log(f"Could not send {item['kind']} to {item['name']} <{item['email']}>: {e}")
+            if fails >= MAX_FAILS_IN_A_ROW:
+                log(f"{fails} sends failed in a row. Stopping; check Gmail and your connection.")
+                return
+            if once:
+                return
+            continue
         if once or dry_run:
             return
         gap = random.randint(sc["min_gap_seconds"], sc["max_gap_seconds"])

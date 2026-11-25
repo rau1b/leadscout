@@ -60,12 +60,16 @@ def send_reply_route(lead_id: str, body: str = Form(...)):
     from leadscout.pitch.quick_replies import unfilled
 
     con = db.connect()
+    cfg = config.load()
     missing = unfilled(body)
+    problem = config.sender_problem(cfg)
+    if problem:
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(problem)}#reply", status_code=303)
     if missing:
         msg = "Fill in " + ", ".join(missing) + " before sending."
         return RedirectResponse(f"/leads/{lead_id}?msg={quote(msg)}#reply", status_code=303)
     try:
-        send_reply(con, config.load(), _gmail(), lead_id, body.strip())
+        send_reply(con, cfg, _gmail(), lead_id, body.strip())
     except ValueError as e:
         return RedirectResponse(f"/leads/{lead_id}?msg={quote(str(e))}#reply", status_code=303)
     return RedirectResponse(f"/leads/{lead_id}?saved=replied#reply", status_code=303)
@@ -216,5 +220,5 @@ def unhide(lead_id: str):
     con = db.connect()
     con.execute("update leads set status = 'new', updated_at = ? where business_id = ? and status = 'hidden'", (now(), lead_id))
     con.commit()
-    score_all(con, config.load())  # back to new or excluded, on its merits
+    score_all(con, config.load(), only=lead_id)  # back to new or excluded, on its merits
     return RedirectResponse(f"/leads/{lead_id}", status_code=303)

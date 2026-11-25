@@ -93,15 +93,17 @@ async def _get(client: httpx.AsyncClient, url: str) -> tuple[httpx.Response | No
     """Fetch, telling a dead domain apart from a slow server or a certificate quirk. Returns (response, text, error)."""
     try:
         return *(await fetch(client, url)), None
+    except httpx.InvalidURL:
+        return None, "", "invalid_url"  # e.g. "http://site.com:80a" in the listing; not an HTTPError subclass
     except httpx.ConnectError as e:
         msg = str(e).lower()
         if "getaddrinfo" in msg or "name or service not known" in msg or "nodename nor servname" in msg:
             return None, "", "dns"  # the domain no longer resolves: expired or never set up
         if "certificate" in msg or "ssl" in msg:
-            # Often a missing intermediate certificate that browsers work around; load it anyway.
+            # Load it anyway so the page can still be checked, but report the broken certificate.
             async with httpx.AsyncClient(headers=client.headers, follow_redirects=True, timeout=20, verify=False) as insecure:
                 try:
-                    return *(await fetch(insecure, url)), None
+                    return *(await fetch(insecure, url)), "bad_certificate"
                 except httpx.HTTPError:
                     return None, "", "ssl"
         return None, "", "connect"
@@ -124,10 +126,12 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
         result["fetch_error"] = err
         return result
     result.update(final_url=str(resp.url), status_code=resp.status_code, https=int(resp.url.scheme == "https"))
+    if err == "bad_certificate":
+        result.update(https=0, fetch_error=err)  # browsers show a security warning, so it's not working HTTPS
     if resp.status_code in (401, 403, 429, 503):
         # Bot protection (e.g. Cloudflare): the site exists, we just can't inspect it. PageSpeed still can.
         result["site_class"] = "real"
-        result["fetch_error"] = f"blocked ({resp.status_code})"
+        result["fetch_error"] = result.get("fetch_error") or f"blocked ({resp.status_code})"  # keep bad_certificate
         return result
     if resp.status_code >= 400:
         result["fetch_error"] = f"HTTP {resp.status_code}"
@@ -145,7 +149,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
         for path in ("contact", "contact-us", "contactus"):
             try:
                 r2, text2 = await fetch(client, urljoin(str(resp.url), "/" + path))  # from the site root, not the current folder
-            except httpx.HTTPError:
+            except (httpx.HTTPError, httpx.InvalidURL):
                 continue
             if r2.status_code < 400:
                 emails = extract_emails(text2, BeautifulSoup(text2, "html.parser"))

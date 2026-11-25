@@ -20,7 +20,8 @@ BUSINESS_TYPES = {
     "food": ("Restaurants and cafes", "restaurant,cafe,bakery,sweet,catering"),
     "events": ("Events, weddings, photography", "event_planning,wedding,photograph,decorat"),
     "retail": ("Boutiques and jewellery", "boutique,clothing,jewel,saree,tailor"),
-    "professional": ("Lawyers and CAs", "lawyer,legal,accountant,chartered,tax"),
+    # Not plain "tax": it matches taxi services too.
+    "professional": ("Lawyers and CAs", "lawyer,legal,accountant,chartered,tax_,tax consult,tax advis,income tax"),
     "auto": ("Car and bike dealers, garages", "car_dealer,motorcycle,auto_repair,garage"),
 }
 

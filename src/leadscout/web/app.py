@@ -1,6 +1,8 @@
 """Local dashboard: `leadscout serve` then open http://127.0.0.1:8000"""
 
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -10,7 +12,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from leadscout import config, db, searches
+from leadscout import backups, config, db, searches
 from leadscout.audit.classify import LABELS
 from leadscout.compliance import in_window, lead_is_suppressed, opt_out
 from leadscout.config import IST
@@ -19,16 +21,44 @@ from leadscout.mailer.sender import daily_cap, next_item, sent_today, today_ist
 from leadscout.pitch import jobs, templates
 
 HERE = Path(__file__).parent
-@asynccontextmanager
-async def lifespan(_app):
+log = logging.getLogger("leadscout")
+
+
+def housekeeping() -> None:
+    """The daily jobs. Safe to call every hour: each one does its work at most once a day. Logs failures, never raises."""
     from leadscout.compliance import purge_if_due
 
+    daily = (
+        ("retention purge", lambda: purge_if_due(db.connect(), config.load())),  # drop never-contacted leads past the limit
+        ("daily backup", lambda: backups.nightly(db.connect(), db.default_path())),  # one copy a day, after the purge
+    )
+    for name, job in daily:
+        try:
+            job()
+        except Exception:
+            log.exception("%s failed", name)
+
+
+async def _housekeeping_every_hour() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        await asyncio.to_thread(housekeeping)  # off the event loop: a backup can take a moment
+
+
+@asynccontextmanager
+async def lifespan(_app):
     from leadscout.web import sending
 
-    purge_if_due(db.connect(), config.load())  # retention: drop never-contacted leads past the limit, once a day
+    housekeeping()
     sending.note_cut_off_run(db.connect())
     searches.start_worker()  # runs area searches queued from the Find leads page
-    yield
+    hourly = asyncio.create_task(_housekeeping_every_hour())  # so a dashboard left open for days still gets its daily jobs
+    try:
+        yield
+    finally:
+        hourly.cancel()
+        with suppress(asyncio.CancelledError):
+            await hourly
 
 
 app = FastAPI(title="LeadScout", lifespan=lifespan)
@@ -46,8 +76,15 @@ async def local_only(request: Request, call_next):
     if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS:
         return PlainTextResponse("LeadScout only answers on 127.0.0.1.", status_code=403)
     if request.method not in ("GET", "HEAD", "OPTIONS"):
-        origin = request.headers.get("origin") or request.headers.get("referer")
-        if origin and urlsplit(origin).hostname not in LOCAL_HOSTS:
+        # Match scheme, host and port exactly: another app on this computer (a different port), a sandboxed
+        # page ("null") or a look-alike such as http://127.0.0.1:8000.evil.com must not pass.
+        port = request.scope["server"][1]
+        allowed = {f"http://{h}:{port}" for h in ("127.0.0.1", "localhost", "[::1]")}
+        origin = request.headers.get("origin")
+        if origin is None and request.headers.get("referer"):
+            parts = urlsplit(request.headers["referer"])
+            origin = f"{parts.scheme}://{parts.netloc}"
+        if origin is not None and origin not in allowed:
             return PlainTextResponse("Blocked a form sent from another website.", status_code=403)
     return await call_next(request)
 
@@ -58,6 +95,7 @@ tpl = Jinja2Templates(directory=HERE / "templates")
 STATUS_LABELS = {
     "new": "New", "drafted": "Drafted", "approved": "Approved", "contacted": "Contacted", "replied": "Replied",
     "won": "Won", "lost": "Lost", "opted_out": "Opted out", "bounced": "Bounced", "excluded": "Excluded", "hidden": "Hidden",
+    "send_failed": "Send failed",
 }
 tpl.env.globals.update(status_labels=STATUS_LABELS, site_labels=LABELS)
 tpl.env.filters["nicecat"] = lambda c: (c or "").replace("_", " ").capitalize()
@@ -101,6 +139,8 @@ def headline(r) -> str:
         return "Instagram only" if "instagram" in w else "Facebook only" if "facebook" in w else "Social page only"
     if r["site_class"] != "real":
         return LABELS.get(r["site_class"], r["site_class"])
+    if r["fetch_error"] == "bad_certificate":
+        return "Security warning in browsers"
     if r["lcp_s"] and r["lcp_s"] > 4:
         return f"Loads in {r['lcp_s']}s on mobile"
     if r["perf_score"] is not None and r["perf_score"] < 50:
@@ -268,7 +308,14 @@ def draft_from_template(lead_id: str):
     con = db.connect()
     cfg = config.load()
     r = lead_row(lead_id)
-    jobs.save_pitch(con, lead_id, templates.render(dict(r), cfg), "template")
+    problem = config.sender_problem(cfg)
+    if problem:
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(problem)}", status_code=303)
+    try:
+        pitch = templates.render(dict(r), cfg)
+    except ValueError as e:  # nothing measured on this site
+        return RedirectResponse(f"/leads/{lead_id}?msg={quote(str(e))}", status_code=303)
+    jobs.save_pitch(con, lead_id, pitch, "template")
     con.commit()
     return RedirectResponse(f"/leads/{lead_id}?saved=drafted", status_code=303)
 
@@ -408,3 +455,4 @@ def start_find(city: str = Form(""), neighbourhood: str = Form(""), types: list[
 
 # Routes for replies, deals and hiding live in extras.py.
 from leadscout.web import extras  # noqa: E402,F401
+from leadscout.web import settings_page  # noqa: E402,F401

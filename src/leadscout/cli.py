@@ -15,6 +15,13 @@ def _ctx():
     return config.load(), db.connect()
 
 
+def _require_sender(cfg) -> None:
+    problem = config.sender_problem(cfg)
+    if problem:
+        typer.echo(problem, err=True)
+        raise typer.Exit(1)
+
+
 @app.command()
 def init():
     """Create config.toml from the example. Edit it with your details afterwards."""
@@ -115,6 +122,8 @@ def pitch(
     from leadscout.pitch import jobs
 
     cfg, con = _ctx()
+    if templates or prepare:
+        _require_sender(cfg)
     if templates:
         typer.echo(f"Drafted {jobs.draft_with_templates(con, cfg, templates)} pitches from templates.")
     elif prepare:
@@ -139,6 +148,17 @@ def gmail_login():
     typer.echo(f"Logged in as {gmail.login()}.")
 
 
+def _gmail():
+    """Gmail client, or a plain message (not a traceback) when the login is missing or expired."""
+    from leadscout.mailer.gmail import Gmail
+
+    try:
+        return Gmail()
+    except RuntimeError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+
+
 @app.command()
 def send(dry_run: bool = typer.Option(False, help="Show what would be sent without sending."), once: bool = typer.Option(False, help="Send one email and stop.")):
     """Send approved pitches through Gmail, respecting warm-up caps and the IST sending window."""
@@ -147,20 +167,18 @@ def send(dry_run: bool = typer.Option(False, help="Show what would be sent witho
     cfg, con = _ctx()
     gm = None
     if not dry_run:
-        from leadscout.mailer.gmail import Gmail
-
-        gm = Gmail()
-    sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo)
+        _require_sender(cfg)
+        gm = _gmail()
+    sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo, reload=config.load)
 
 
 @app.command("check-replies")
 def check_replies():
     """Check Gmail for replies, opt-outs and bounces."""
     from leadscout.mailer import sender
-    from leadscout.mailer.gmail import Gmail
 
     cfg, con = _ctx()
-    typer.echo(sender.check_replies(con, cfg, Gmail()))
+    typer.echo(sender.check_replies(con, cfg, _gmail()))
 
 
 @app.command()
@@ -179,7 +197,12 @@ def forget(value: str):
     from leadscout.compliance import forget as do_forget
 
     _, con = _ctx()
-    typer.echo(f"Deleted {do_forget(con, value)} business record(s). Kept a hashed opt-out entry so they're never contacted again.")
+    n, failed = do_forget(con, value)
+    typer.echo(f"Deleted {n} business record(s) and removed them from the backups. Kept a hashed opt-out entry so they're never contacted again.")
+    if failed:
+        typer.echo(f"Couldn't open {len(failed)} backup(s) in data/backups/, so they may still hold this person: {', '.join(failed)}. "
+                   "Delete those files by hand.", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -189,6 +212,47 @@ def purge():
 
     cfg, con = _ctx()
     typer.echo(f"Purged {purge_stale(con, cfg.retention['purge_uncontacted_after_days'])} stale records.")
+
+
+@app.command()
+def backup():
+    """Copy the database to data/backups/ now. Copies older than [backups] keep_days are deleted."""
+    from leadscout import backups
+
+    _, con = _ctx()
+    typer.echo(f"Saved {backups.backup_now(con, db.file_of(con), 'manual')}.")
+
+
+@app.command()
+def restore(backup_file: str = typer.Argument(..., help="A file in data/backups/ (name or path).")):
+    """Replace the database with a backup. Saves a copy of the current one first; never brings back opted-out people."""
+    import sqlite3
+
+    from leadscout import backups, launch
+
+    if launch.dashboard_pid():
+        typer.echo("The dashboard is running. Stop it with `leadscout stop`, then restore.", err=True)
+        raise typer.Exit(1)
+    if launch.running():
+        typer.echo("A dashboard is answering on http://127.0.0.1:8000. Press Ctrl+C in the terminal running "
+                   "`leadscout serve`, then restore.", err=True)
+        raise typer.Exit(1)
+    path = Path(backup_file)
+    if not path.exists():
+        path = backups.folder(db.default_path()) / backup_file
+    if not path.exists():
+        typer.echo(f"No such backup: {backup_file}. The backups are in {backups.folder(db.default_path())}.", err=True)
+        raise typer.Exit(1)
+    try:
+        r = backups.restore(db.default_path(), path)
+    except (sqlite3.Error, ValueError) as e:
+        typer.echo(f"Couldn't restore {path.name}: {e}. If a pre-restore copy was made, it's the newest file in data/backups/.", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(f"Restored {r['file']} (taken {r['taken']:%d %b %Y %H:%M}).")
+    if r["from_version"] < r["version"]:
+        typer.echo(f"Upgraded it from database version {r['from_version']} to {r['version']}.")
+    typer.echo(f"Deleted {r['removed']} business(es) that asked to be forgotten; marked {r['opted_out']} lead(s) opted out.")
+    typer.echo(f"Your database as it was before the restore is saved as {r['pre_restore'].name}.")
 
 
 @app.command()

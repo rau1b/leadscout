@@ -37,6 +37,22 @@ NO_WORDS = re.compile(
 )
 
 
+DELAY = re.compile(r"\bdelay(ed)?\b|will (retry|keep trying)|not yet (been )?delivered", re.I)
+
+
+def delivery_notice(sender: str, subject: str) -> str | None:
+    """'bounced' for a real delivery failure, 'delay' for a still-retrying notice, else None (a person wrote it)."""
+    daemon = "mailer-daemon" in sender or "postmaster" in sender
+    if not (daemon or "delivery status" in subject.lower() or "undeliver" in subject.lower()):
+        return None
+    return "delay" if DELAY.search(subject) else "bounced"
+
+
+def is_opt_out(text: str) -> bool:
+    """True when a reply reads as a "no" or a request to stop (see NO_WORDS)."""
+    return bool(NO_WORDS.search((text or "")[:200]))
+
+
 def _token_path():
     return data_dir() / "gmail_token.json"
 
@@ -56,15 +72,18 @@ class Gmail:
         if not _token_path().exists():
             raise RuntimeError("Not logged in to Gmail. Run `leadscout gmail-login` first.")
         creds = Credentials.from_authorized_user_file(str(_token_path()), SCOPES)
-        if not creds.valid and creds.refresh_token:
+        if not creds.valid:
+            # Google expires logins for OAuth apps left in "Testing" mode after 7 days.
+            relogin = (
+                "Your Gmail login has expired. Run `leadscout gmail-login` again. (Google expires logins after "
+                "7 days while the OAuth app is in Testing mode; set it to In production to stop this.)"
+            )
+            if not creds.refresh_token:
+                raise RuntimeError(relogin)
             try:
                 creds.refresh(Request())
             except RefreshError as e:
-                # Google expires logins for OAuth apps left in "Testing" mode after 7 days.
-                raise RuntimeError(
-                    "Your Gmail login has expired. Run `leadscout gmail-login` again. (Google expires logins after "
-                    "7 days while the OAuth app is in Testing mode; set it to In production to stop this.)"
-                ) from e
+                raise RuntimeError(relogin) from e
             _token_path().write_text(creds.to_json(), encoding="utf-8")
         self.s = AuthorizedSession(creds)
 
@@ -138,7 +157,10 @@ class Gmail:
             sender = parseaddr(headers.get("from", ""))[1].lower()
             if sender == my_address.lower():
                 continue
-            bounced = "mailer-daemon" in sender or "postmaster" in sender or "delivery status" in headers.get("subject", "").lower()
+            notice = delivery_notice(sender, headers.get("subject", ""))
+            if notice == "delay":
+                continue  # the server is still retrying; not a bounce and not a reply
+            bounced = notice == "bounced"
             body = strip_quoted(plain_text(payload) or m.get("snippet", ""))
             out.append({
                 "id": m["id"],
@@ -146,7 +168,7 @@ class Gmail:
                 "subject": headers.get("subject", ""),
                 "body": body,
                 "received_ms": int(m.get("internalDate", 0)),
-                "kind": "bounced" if bounced else ("opted_out" if NO_WORDS.search(body[:200]) else "replied"),
+                "kind": "bounced" if bounced else ("opted_out" if is_opt_out(body) else "replied"),
             })
         return out
 

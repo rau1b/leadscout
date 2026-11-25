@@ -2,159 +2,103 @@
 
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
 from leadscout.config import IST, data_dir
 
-SCHEMA = """
-create table if not exists businesses (
-    id text primary key,
-    source text not null,
-    name text not null,
-    category text,
-    category_path text,
-    address text,
-    locality text,
-    postcode text,
-    lat real,
-    lon real,
-    phone text,
-    phone_type text,
-    website text,
-    emails text default '[]',
-    socials text default '[]',
-    confidence real,
-    brand text,
-    area text,
-    city text,
-    fetched_at text not null
-);
-create table if not exists searches (
-    id integer primary key autoincrement,
-    city text not null,
-    neighbourhood text,
-    label text not null,
-    categories text not null,
-    status text not null default 'queued',
-    message text,
-    places integer,
-    stored integer,
-    created_at text not null,
-    finished_at text,
-    lat real,
-    lon real,
-    state text,
-    population integer,
-    resolved text
-);
-create table if not exists audits (
-    business_id text primary key references businesses(id) on delete cascade,
-    site_class text not null,
-    final_url text,
-    status_code integer,
-    https integer,
-    viewport integer,
-    copyright_year integer,
-    generator text,
-    has_whatsapp integer,
-    has_tel integer,
-    has_maps integer,
-    has_form integer,
-    found_emails text default '[]',
-    perf_score integer,
-    lcp_s real,
-    cls real,
-    tbt_ms integer,
-    psi_error text,
-    fetch_error text,
-    audited_at text not null
-);
-create table if not exists leads (
-    business_id text primary key references businesses(id) on delete cascade,
-    score integer not null,
-    reasons text not null default '[]',
-    status text not null default 'new',
-    email text,
-    email_ok integer,
-    quote_inr integer,
-    paid_inr integer,
-    deal_note text,
-    won_at text,
-    updated_at text not null
-);
-create table if not exists pitches (
-    business_id text primary key references businesses(id) on delete cascade,
-    subject text not null,
-    body text not null,
-    whatsapp text,
-    source text not null,
-    approved integer not null default 0,
-    created_at text not null,
-    updated_at text not null
-);
-create table if not exists outreach (
-    id integer primary key autoincrement,
-    business_id text references businesses(id) on delete cascade,
-    channel text not null,
-    kind text not null,
-    to_addr text,
-    gmail_id text,
-    thread_id text,
-    sent_at text not null
-);
-create table if not exists suppression (
-    value_hash text primary key,
-    reason text,
-    added_at text not null
-);
-create table if not exists replies (
-    gmail_id text primary key,
-    business_id text references businesses(id) on delete cascade,
-    thread_id text,
-    from_addr text,
-    subject text,
-    body text,
-    received_at text,
-    kind text
-);
-create table if not exists meta (key text primary key, value text);
-create index if not exists idx_leads_status on leads(status);
-create index if not exists idx_outreach_sent on outreach(sent_at);
-"""
-
 # Lead status flow:
 # new -> drafted -> approved -> contacted -> replied | won | lost
-# plus: opted_out, bounced, excluded (by scoring), hidden (by you; scoring never changes it)
-STATUSES = ["new", "drafted", "approved", "contacted", "replied", "won", "lost", "opted_out", "bounced", "excluded", "hidden"]
+# plus: opted_out, bounced, excluded (by scoring), hidden (by you; scoring never changes it),
+# send_failed (Gmail refused the send; the sender moved on)
+STATUSES = ["new", "drafted", "approved", "contacted", "replied", "won", "lost", "opted_out", "bounced", "excluded", "hidden", "send_failed"]
 
 
 def now() -> str:
     return datetime.now(IST).isoformat(timespec="seconds")
 
 
+MIGRATIONS = Path(__file__).parent / "migrations"
+
 # Database files already migrated in this process. The dashboard connects on every request, so the
-# migration and schema script run once per file instead of on every page load.
+# migrations run once per file instead of on every page load. The lock stops two dashboard threads migrating at once.
 _ready: set[str] = set()
+_ready_lock = threading.Lock()
+
+
+def default_path() -> Path:
+    return data_dir() / "leadscout.db"
 
 
 def connect(path=None) -> sqlite3.Connection:
-    path = Path(path or data_dir() / "leadscout.db").resolve()
-    fresh = str(path) not in _ready or not path.exists()
+    path = Path(path or default_path()).resolve()
+    missing = not path.exists()
     # The dashboard's search worker writes while pages read: wait for locks instead of failing, and use WAL.
     con = sqlite3.connect(path, timeout=30, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("pragma foreign_keys = on")
-    if fresh:
-        con.execute("pragma journal_mode = wal")  # stored in the file, so once is enough
-        _migrate(con)
-        con.executescript(SCHEMA)
-        _ready.add(str(path))
+    con.execute("pragma secure_delete = on")  # deleted rows (forget, purge...) are overwritten, not left in free pages
+    if missing or str(path) not in _ready:
+        with _ready_lock:
+            if missing or str(path) not in _ready:  # another thread may have migrated it while we waited
+                con.execute("pragma journal_mode = wal")  # stored in the file, so once is enough
+                _upgrade(con, path)
+                _ready.add(str(path))
     return con
 
 
+def file_of(con) -> Path:
+    """The file this connection has open."""
+    return Path(con.execute("pragma database_list").fetchone()[2])
+
+
+def migrations() -> list[tuple[int, Path]]:
+    """The numbered .sql files, in order: 0001_baseline.sql is version 1."""
+    return sorted((int(p.name.split("_")[0]), p) for p in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+
+
+def _has_tables(con) -> bool:
+    return con.execute("select 1 from sqlite_master where type = 'table'").fetchone() is not None
+
+
+def _upgrade(con, path: Path) -> None:
+    """Apply pending migrations in order, each in its own transaction; `pragma user_version` is the last one applied."""
+    from leadscout import backups
+
+    version = con.execute("pragma user_version").fetchone()[0]
+    pending = [(n, p) for n, p in migrations() if n > version]
+    if not pending:
+        return
+    if _has_tables(con):
+        backups.backup_now(con, path, f"v{version}")
+    # autocommit=True: we control the transactions, and executescript() won't commit one behind our back.
+    mig = sqlite3.connect(path, timeout=30, autocommit=True)
+    try:
+        for n, p in pending:
+            mig.execute("begin immediate")  # takes the write lock, so another process can't migrate in between
+            try:
+                current = mig.execute("pragma user_version").fetchone()[0]
+                if current < n:  # else another process applied it while we waited; alter table can't run twice
+                    if current == 0 and _has_tables(mig):
+                        # Made before numbered migrations: _migrate() adds the columns 0001 already has, then 0001's
+                        # "create table if not exists" adds only the tables this file lacks, as the old schema script did.
+                        # Its commit() calls do nothing on an autocommit=True connection, so it stays in this transaction.
+                        _migrate(mig)
+                    mig.executescript(p.read_text(encoding="utf-8"))
+                    mig.execute(f"pragma user_version = {n}")
+                mig.execute("commit")
+            except BaseException:
+                if mig.in_transaction:
+                    mig.execute("rollback")
+                raise
+    finally:
+        mig.close()
+
+
 def _migrate(con) -> None:
-    """Bring databases created by older versions up to date."""
+    """One-time step for databases made before numbered migrations (user_version 0): bring them up to
+    the 0001 baseline. Only _upgrade() calls it; schema changes now go in a new migrations/*.sql file."""
     cols = {r[1] for r in con.execute("pragma table_info(businesses)")}
     if cols and "city" not in cols:
         con.execute("alter table businesses add column city text")
@@ -179,6 +123,14 @@ def _migrate(con) -> None:
         if lead_cols and col not in lead_cols:
             con.execute(f"alter table leads add column {col} {kind}")
     con.commit()
+
+
+def log_event(con, type: str, business_id=None, actor: str = "system", **data) -> None:
+    """Record an event. Doesn't commit, so the event lands in the same transaction as the change it describes."""
+    con.execute(
+        "insert into events (at, business_id, type, actor, data_json) values (?, ?, ?, ?, ?)",
+        (now(), business_id, type, actor, json.dumps(data, ensure_ascii=False) if data else None),
+    )
 
 
 def jload(s) -> list:

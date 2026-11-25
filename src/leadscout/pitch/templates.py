@@ -86,22 +86,35 @@ def problem(f: dict) -> tuple[str, str]:
         issues.append(f"it scores {f['perf_score']}/100 on Google's mobile speed test")
     if f.get("viewport") == 0:
         issues.append("it isn't built for mobile screens, so phone visitors have to pinch and zoom")
-    if not f.get("https"):
+    if f.get("fetch_error") == "bad_certificate":
+        issues.insert(0, "its security certificate is broken, so browsers show a security warning before the page opens")
+    elif not f.get("https"):
         issues.append("it has no HTTPS, so browsers mark it \"Not secure\"")
     if is_outdated(f.get("copyright_year")):
         issues.append(f"the footer still says © {f['copyright_year']}, which makes it look unmaintained")
     if not issues and f.get("has_whatsapp") == 0:
         issues.append("there's no WhatsApp button, which is how most customers here prefer to reach a business")
     if not issues:
-        issues.append("a few small fixes would make it faster and easier to use on a phone")
+        # Blocked, or no PageSpeed score: we measured nothing, and pitches cite only measured facts.
+        raise ValueError("Nothing was measured on this website, so there's no honest problem to pitch.")
     subject = (
         f"{possessive(n)} website takes {f['lcp_s']}s to load on mobile"
         if f.get("lcp_s") and f["lcp_s"] > 4
         else f"A few quick wins for {possessive(n)} website"
     )
     # Only what we measured for this site: no borrowed industry statistics.
-    body = "I ran Google's free speed and mobile test on your website, and " + "; ".join(issues[:2]) + "."
+    ran_psi = f.get("perf_score") is not None or f.get("lcp_s")
+    intro = "I ran Google's free speed and mobile test on your website, and " if ran_psi else "I had a look at your website, and "
+    body = intro + "; ".join(issues[:2]) + "."
     return subject, body
+
+
+def has_measured_problem(f: dict) -> bool:
+    try:
+        problem(f)
+        return True
+    except ValueError:
+        return False
 
 
 def place_of(f: dict, home: str) -> str:

@@ -19,24 +19,38 @@ limit ?
 
 
 def pending_facts(con, min_score: int, limit: int) -> list[dict]:
-    rows = con.execute(FACTS_SQL, (min_score, limit)).fetchall()
+    """The best new leads that have a measured problem to pitch (filtered before the limit, so unpitchable
+    leads never use up the slots)."""
     out = []
-    for r in rows:
+    for r in con.execute(FACTS_SQL, (min_score, -1)):
         f = dict(r)
+        if not templates.has_measured_problem(f):
+            continue
         f["reasons"] = jload(f["reasons"])
         out.append(f)
+        if len(out) >= limit:
+            break
     return out
 
 
+# Leads not yet emailed. Saving a pitch for one of these (re)drafts it and needs a fresh approval;
+# for any later status only the text changes, so a sent lead never goes back into the send queue.
+DRAFTABLE = ("new", "drafted", "approved")
+
+
 def save_pitch(con, business_id: str, pitch: dict, source: str) -> None:
+    row = con.execute("select status from leads where business_id = ?", (business_id,)).fetchone()
+    early = row is None or row["status"] in DRAFTABLE
     con.execute(
         """insert into pitches (business_id, subject, body, whatsapp, source, approved, created_at, updated_at)
            values (?, ?, ?, ?, ?, 0, ?, ?)
            on conflict(business_id) do update set subject = excluded.subject, body = excluded.body,
-               whatsapp = excluded.whatsapp, source = excluded.source, approved = 0, updated_at = excluded.updated_at""",
-        (business_id, pitch["subject"], pitch["body"], pitch.get("whatsapp"), source, now(), now()),
+               whatsapp = excluded.whatsapp, source = excluded.source,
+               approved = case when ? then 0 else approved end, updated_at = excluded.updated_at""",
+        (business_id, pitch["subject"], pitch["body"], pitch.get("whatsapp"), source, now(), now(), early),
     )
-    con.execute("update leads set status = 'drafted', updated_at = ? where business_id = ?", (now(), business_id))
+    if early:
+        con.execute("update leads set status = 'drafted', updated_at = ? where business_id = ?", (now(), business_id))
 
 
 def draft_with_templates(con, cfg, limit: int) -> int:
@@ -114,7 +128,7 @@ def import_results(con, cfg) -> tuple[int, list[dict]]:
     """Save Claude's pitches. A pitch citing a number we never measured is set aside in
     pitch_results.rejected.json with the numbers to fix, instead of being imported."""
     data = json.loads(results_path().read_text(encoding="utf-8"))
-    known = {r["business_id"] for r in con.execute("select business_id from leads")}
+    known = {r["business_id"] for r in con.execute("select business_id from leads where status in ('new', 'drafted')")}
     n, rejected = 0, []
     for item in data:
         if item.get("id") in known and item.get("subject") and item.get("body"):

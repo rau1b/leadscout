@@ -71,7 +71,10 @@ def upsert_business(con, b: dict) -> None:
                address = excluded.address, locality = excluded.locality, postcode = excluded.postcode,
                phone = excluded.phone, phone_type = excluded.phone_type, website = excluded.website,
                emails = excluded.emails, socials = excluded.socials, confidence = excluded.confidence,
-               brand = excluded.brand, fetched_at = excluded.fetched_at""",
+               brand = excluded.brand, fetched_at = excluded.fetched_at,
+               area = coalesce(excluded.area, area), city = coalesce(excluded.city, city)""",
+        # shortcut: a business belongs to one area, the latest search that found it, so an older overlapping
+        # search's count drops; add a business<->search link table if per-search counts must stay exact.
         {
             "id": b["id"],
             "source": b["source"],

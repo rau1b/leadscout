@@ -312,3 +312,35 @@ tfoot th { border-top: 2px solid var(--text); border-bottom: 0; color: var(--tex
 .where { display: block; font-weight: 400; color: var(--muted); font-size: 14.5px; }
 .stuck { margin-top: var(--s3); font-size: 15px; }
 .stuck ul { margin: var(--s1) 0 var(--s2); padding-left: var(--s4); }
+
+/* Settings: one ledger page per section, label column on the left */
+.settings { max-width: 960px; }
+.settings section { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s3) var(--s6); padding: var(--s5) 0; border-top: 1px solid var(--rule); }
+.settings section header h2 { font-size: 20px; }
+.settings section header .hint { margin: var(--s1) 0 0; }
+.settings .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); align-items: start; }
+.settings .grid .field + .field { margin-top: 0; }
+.settings .wide { grid-column: 1 / -1; }
+.settings .field .hint, .settings .err { margin: var(--s1) 0 0; }
+.settings textarea { min-height: 112px; }
+.settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings legend, .settings .label { font-weight: 600; font-size: 16px; padding: 0; margin-bottom: var(--s1); display: block; }
+.settings .days { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.settings .days legend { width: 100%; }
+.settings .days .err { width: 100%; }
+.settings .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); }
+.settings .trio label { font-weight: 500; color: var(--muted); }
+.settings .keyline { margin: 0; }
+.settings .keyline .ok { color: var(--green); }
+input[type=email], input[type=tel], input[type=url], input[type=number], input[type=time] {
+  font: 17px/1.5 Mukta, sans-serif; color: var(--text); font-variant-numeric: tabular-nums;
+  border: 1px solid var(--field-border); border-radius: var(--radius); padding: 7px 10px; background: var(--input); width: 100%;
+}
+[aria-invalid="true"] { border-color: var(--danger); background: var(--danger-soft); }
+.err { color: var(--danger); font-size: 15px; font-weight: 600; }
+.note.bad { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+.savebar { position: sticky; bottom: 0; display: flex; gap: var(--s2); align-items: center; padding: var(--s3) 0; background: var(--ground); border-top: 3px double var(--bordeaux); }
+@media (max-width: 820px) {
+  .settings section { grid-template-columns: minmax(0, 1fr); }
+  .settings .grid { grid-template-columns: minmax(0, 1fr); }
+}

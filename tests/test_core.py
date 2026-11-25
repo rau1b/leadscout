@@ -8,7 +8,7 @@ from leadscout.audit.site import check_html
 from leadscout.compliance import in_window, is_suppressed, normalize, suppress
 from leadscout.config import IST
 from leadscout.mailer import sender
-from leadscout.mailer.gmail import NO_WORDS
+from leadscout.mailer.gmail import NO_WORDS, is_opt_out
 from leadscout.pitch import templates
 from leadscout.sources.common import phone_info, pick_website
 
@@ -98,7 +98,7 @@ def test_warmup_cap(con, cfg):
      ("I don't need much, just a simple site", False), ("Is there no cheaper option?", False), ("Haan, bhejiye", False)],
 )
 def test_reply_no_detection(reply, is_no):
-    assert bool(NO_WORDS.search(reply)) is is_no
+    assert is_opt_out(reply) is is_no
 
 
 def test_template_uses_only_measured_facts(cfg):
@@ -275,7 +275,7 @@ def test_forget_matches_exact_email_only(con):
         con.execute("insert into businesses (id, source, name, emails, fetched_at) values (?, 't', ?, ?, '2026-11-20')",
                     (bid, bid, f'["{email}"]'))
     con.commit()
-    assert forget(con, "A@Shop.in") == 1
+    assert forget(con, "A@Shop.in") == (1, [])
     assert [r[0] for r in con.execute("select id from businesses")] == ["A"]
     assert is_suppressed(con, "a@shop.in")
 
@@ -416,6 +416,7 @@ def test_import_sets_aside_unmeasured_numbers(home, cfg):
 
     _seed_lead(home, "b2")
     home.execute("update audits set site_class = 'real', lcp_s = 7.8, perf_score = 31 where business_id = 'b2'")
+    home.execute("update leads set status = 'new'")  # only leads still waiting for a pitch take an imported one
     home.commit()
     jobs.results_path().write_text(json.dumps([
         {"id": "b2", "subject": "Your site takes 7.8s on mobile", "body": "It scores 31/100. Call +91 90000 00000.", "whatsapp": "7.8s"},
@@ -604,6 +605,7 @@ def test_old_repeated_area_rows_are_merged(tmp_path):
     for label, lat in (("Navelim", 15.25885), ("Navelim", 15.25885), ("Madgaon", 15.27501), ("goa", None), ("Goa", None)):
         con.execute("insert into searches (city, label, categories, status, created_at, lat, lon) values (?, ?, '{}', 'done', '2026-11-21', ?, ?)",
                     (label, label, lat, lat and 73.9))
+    con.execute("pragma user_version = 0")  # a file from before numbered migrations
     con.commit()
     con.close()
     db._ready.clear()
@@ -692,7 +694,7 @@ def test_dashboard_starts_and_stops_sending(client, home, monkeypatch):
     home.commit()
     gate = threading.Event()
 
-    def run(con, cfg, gmail, log, stop):  # stands in for sender.run: no network, waits to be stopped
+    def run(con, cfg, gmail, log, stop, reload=None):  # stands in for sender.run: no network, waits to be stopped
         log("running")
         gate.set()
         stop.wait(5)
@@ -747,6 +749,15 @@ def test_cut_off_send_found_in_gmail_is_recorded(con, cfg):
     assert con.execute("select status from leads").fetchone()[0] == "contacted"
     assert con.execute("select gmail_id, thread_id from outreach").fetchone()[:] == ("g7", "t7")
     assert sender.stuck_claims(con) == [] and sender.next_item(con, cfg) is None
+
+
+def test_failed_send_that_gmail_took_is_recorded(con, cfg):
+    # The sender marks a lead send_failed when Gmail errors, but a 5xx can come after Gmail accepted it.
+    _approved_first(con)
+    con.execute("update leads set status = 'send_failed'")
+    _cut_off_claim(con)
+    assert sender.resolve_stuck(con, SentFolderGmail(found=True)) == {"recorded": 1, "released": 0}
+    assert con.execute("select status from leads").fetchone()[0] == "contacted"
 
 
 def test_cut_off_send_missing_from_gmail_goes_back_in_queue(con, cfg):
@@ -869,3 +880,26 @@ def test_unsubscribe_check_only_reads_new_mail(con, cfg):
     sender.check_replies(con, cfg, Gm([]))
     sender.check_replies(con, cfg, Gm([]))
     assert calls[0] is None and calls[1] is not None
+
+
+def test_unsubscribe_after_a_bounce_becomes_an_opt_out(con, cfg):
+    from leadscout.compliance import is_opted_out
+
+    _seed_lead(con)
+    suppress(con, "owner@clinic.in", "bounced")
+
+    class Gm(FakeGmail):
+        def unsubscribe_requests(self, me, since=None):
+            return {"owner@clinic.in"}
+
+    assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 1
+    assert is_opted_out(con, "owner@clinic.in")
+
+
+def test_sender_picks_up_new_settings_between_emails(con, cfg):
+    """A Settings change reaches a run that's already going: the config is re-read before each email."""
+    _seed_lead(con)
+    closed = config.Config({**cfg.raw, "sending": {**cfg.sending, "days": []}})  # e.g. all days unticked on the Settings page
+    logs = []
+    sender.run(con, cfg, SendingGmail(), log=logs.append, reload=lambda: closed)
+    assert logs and logs[0].startswith("Outside the sending window")

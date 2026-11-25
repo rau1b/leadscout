@@ -34,15 +34,18 @@ async def _audit_all(con, rows, api_key: str, run_psi: bool, progress) -> None:
     async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
 
         async def one(r):
-            static = classify_static(r["website"])
-            if static:
-                result = {"site_class": static}
-            else:
-                async with site_sem:
-                    result = await audit_site(client, r["website"])
-                if run_psi and result["site_class"] == "real":
-                    async with psi_sem:
-                        result.update(await pagespeed.run(client, result["final_url"], api_key))
+            try:
+                static = classify_static(r["website"])
+                if static:
+                    result = {"site_class": static}
+                else:
+                    async with site_sem:
+                        result = await audit_site(client, r["website"])
+                    if run_psi and result["site_class"] == "real":
+                        async with psi_sem:
+                            result.update(await pagespeed.run(client, result["final_url"], api_key))
+            except Exception as e:  # one odd record must not stop the rest, or stay pending forever
+                result = {"site_class": "broken", "fetch_error": f"audit error: {type(e).__name__}"}
             save(con, r["id"], result)
             con.commit()
             progress(r["name"], result["site_class"])

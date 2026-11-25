@@ -48,7 +48,12 @@
 
     <section class="editor">
       {% if convo %}<details><summary><h2>Original pitch</h2></summary>{% else %}<h2>Pitch</h2>{% endif %}
-      {% if r.subject %}
+      {% if r.subject and history %}
+      {# Already emailed: show what was sent, read-only. #}
+      <div class="field"><label for="subject">Subject</label><input id="subject" type="text" value="{{ r.subject }}" readonly></div>
+      <div class="field"><label for="body">Email</label><textarea id="body" rows="14" readonly>{{ r.body }}</textarea></div>
+      <p class="hint">Sent, so it can't be edited.</p>
+      {% elif r.subject %}
       <form method="post" action="/leads/{{ r.id }}/pitch">
         <div class="field"><label for="subject">Subject</label><input id="subject" type="text" name="subject" value="{{ r.subject }}" maxlength="120" required></div>
         <div class="field"><label for="body">Email</label><textarea id="body" name="body" rows="14" required>{{ r.body }}</textarea></div>
@@ -130,7 +135,7 @@
         <p class="hint">New chats today: {{ wa_today }} of {{ wa_cap }}. Manual only, from a separate number, one message each.</p>
         {% elif r.phone %}<p class="hint">Landline number: no WhatsApp link. Call only after they reply.</p>{% endif %}
         {% if r.status != 'opted_out' %}
-        <form method="post" action="/leads/{{ r.id }}/optout" onsubmit="return confirm('Never contact {{ r.name|e }} again?')">
+        <form method="post" action="/leads/{{ r.id }}/optout" data-confirm="Never contact {{ r.name }} again?">
           <button class="btn danger small">Opt out for good</button>
         </form>
         {% endif %}

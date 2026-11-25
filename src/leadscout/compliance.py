@@ -1,12 +1,15 @@
 """Opt-out list, sending window and data retention (see docs/INDIA_RULES.md)."""
 
 import hashlib
+import json
+import sqlite3
 from datetime import datetime, time, timedelta
 
 import phonenumbers
 
-from leadscout.config import IST
-from leadscout.db import jload, now
+from leadscout.config import IST, data_dir
+from leadscout import backups
+from leadscout.db import file_of, jload, now
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -27,8 +30,25 @@ def _hash(value: str) -> str:
     return hashlib.sha256(normalize(value).encode()).hexdigest()
 
 
-def suppress(con, value: str, reason: str) -> None:
-    con.execute("insert or ignore into suppression(value_hash, reason, added_at) values(?, ?, ?)", (_hash(value), reason, now()))
+FORGET = "forget request"
+
+# A value can be suppressed for several reasons over time; the strongest one is kept, never downgraded:
+# a forget request > any opt-out ("manual", "dashboard", "opted_out", "unsubscribe button"...) > a bounce.
+_RANK = "(case {} when 'forget request' then 2 when 'bounced' then 0 else 1 end)"
+_UPSERT = f"""insert into suppression (value_hash, reason, added_at) values (?, ?, ?)
+              on conflict (value_hash) do update set reason = excluded.reason, added_at = excluded.added_at
+              where {_RANK.format("excluded.reason")} > {_RANK.format("suppression.reason")}"""
+
+
+def add_suppression_rows(con, rows) -> None:
+    """Insert (value_hash, reason, added_at) rows, keeping the stronger reason where a hash is already listed."""
+    con.executemany(_UPSERT, rows)
+
+
+def suppress(con, value: str | None, reason: str) -> None:
+    if not value:
+        return  # e.g. a bounce on a lead that has no email stored
+    add_suppression_rows(con, [(_hash(value), reason, now())])
     con.commit()
 
 
@@ -70,19 +90,72 @@ def opt_out(con, value: str, reason: str) -> int:
     return cur.rowcount
 
 
-def forget(con, value: str) -> int:
-    """Delete every business holding this email/phone; keep only the hashed opt-out entry."""
+def forget(con, value: str) -> tuple[int, list[str]]:
+    """Delete every business holding this email/phone, here and in every backup; keep only the hashed opt-out entry.
+
+    Returns (businesses deleted from the live database, backup files that couldn't be cleaned).
+    """
+    ids = _forget_in(con, value)
+    _forget_in_pitch_files(ids)
+    return len(ids), _forget_in_backups(backups.folder(file_of(con)), value)
+
+
+def _forget_in_backups(folder, value: str) -> list[str]:
+    """Apply the same forget to each backup, so a restored copy neither holds the person nor contacts them again."""
+    failed = []
+    for f in sorted(folder.glob("*.db")):
+        try:
+            b = sqlite3.connect(f"{f.resolve().as_uri()}?mode=rw", uri=True, timeout=5)  # mode=rw: never create a file
+            try:
+                b.row_factory = sqlite3.Row
+                b.execute("pragma foreign_keys = on")  # so the business's leads, pitches, events... go with it
+                b.execute("pragma secure_delete = on")  # overwrite deleted rows instead of leaving them in free pages
+                _forget_in(b, value)
+                b.execute("vacuum")
+            finally:
+                b.close()
+        except sqlite3.Error:
+            failed.append(f.name)  # corrupt, locked or too old a schema: the caller tells you, and the rest still get cleaned
+    return failed
+
+
+def _forget_in(con, value: str) -> set[str]:
+    """Delete the matching businesses on this connection and add the hashed opt-out entry. Returns their ids."""
     key = normalize(value)
-    rows = con.execute("select id, phone, emails from businesses").fetchall()
-    # Exact matches only: a substring test would also delete aa@shop.in when asked to forget a@shop.in.
-    ids = [r["id"] for r in rows if r["phone"] == key or key in {e.strip().lower() for e in jload(r["emails"])}]
-    ids += [r["business_id"] for r in con.execute("select business_id from leads where lower(email) = ?", (key,))]
-    ids = sorted(set(ids))
+    ids = {bid for bid, held in contacts(con) if key in held}
     for bid in ids:
         con.execute("delete from businesses where id = ?", (bid,))
-    suppress(con, value, "forget request")
+    suppress(con, value, FORGET)
     con.commit()
-    return len(ids)
+    return ids
+
+
+def contacts(con) -> list[tuple[str, set[str]]]:
+    """(business id, every email and phone stored for it, normalized), from businesses, audits and leads."""
+    rows = con.execute(
+        """select b.id, b.phone, b.emails, a.found_emails, l.email from businesses b
+           left join audits a on a.business_id = b.id left join leads l on l.business_id = b.id"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        held = {e.strip().lower() for e in jload(r["emails"]) + jload(r["found_emails"]) + [r["email"] or ""]} - {""}
+        if r["phone"]:
+            held.add(normalize(r["phone"]))
+        out.append((r["id"], held))
+    return out
+
+
+def _forget_in_pitch_files(ids: set[str]) -> None:
+    """Drop these businesses from the Claude Code hand-off files too (data/pitch_jobs.json, pitch_results*.json)."""
+    if not ids:
+        return
+    for path in data_dir().glob("pitch_*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("leads"), list):
+            data["leads"] = [x for x in data["leads"] if x.get("id") not in ids]
+        elif isinstance(data, list):
+            data = [x for x in data if not (isinstance(x, dict) and x.get("id") in ids)]
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def in_window(cfg_sending: dict, at: datetime | None = None) -> bool:
@@ -122,5 +195,6 @@ def purge_if_due(con, cfg) -> int | None:
     if get_meta(con, "last_purge") == today:
         return None
     n = purge_stale(con, cfg.retention["purge_uncontacted_after_days"])
+    backups.prune(backups.folder(file_of(con)), cfg.backups["keep_days"])
     set_meta(con, "last_purge", today)
     return n
