@@ -121,3 +121,45 @@ def test_forget_overwrites_the_live_database_file(tmp_path, monkeypatch):
     con.execute("pragma wal_checkpoint(truncate)")
     data = db.default_path().read_bytes()
     assert b"gone@shop.in" not in data and b"stays@shop.in" in data
+
+
+def test_housekeeping_runs_daily_jobs_once_a_day(tmp_path, monkeypatch):
+    from leadscout.web.app import housekeeping
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    housekeeping()
+    housekeeping()  # the hourly repeat: nothing new the same day
+    assert len(list((tmp_path / "data" / "backups").glob("*-nightly.db"))) == 1
+    assert db.get_meta(db.connect(), "last_purge") == f"{datetime.now(IST):%Y-%m-%d}"
+
+
+def test_housekeeping_logs_a_failure_and_keeps_going(tmp_path, monkeypatch, caplog):
+    from leadscout import compliance
+    from leadscout.web.app import housekeeping
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+
+    def broken(*a):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(compliance, "purge_if_due", broken)
+    housekeeping()  # doesn't raise
+    assert "retention purge failed" in caplog.text and "disk full" in caplog.text
+    assert list((tmp_path / "data" / "backups").glob("*-nightly.db"))  # the backup still ran
+
+
+def test_hourly_task_stops_cleanly_on_shutdown(tmp_path, monkeypatch):
+    import asyncio
+
+    from leadscout import searches
+    from leadscout.web import app as web
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    monkeypatch.setattr(searches, "start_worker", lambda: None)
+
+    async def run():
+        async with web.lifespan(web.app):
+            await asyncio.sleep(0)  # the hourly task is now waiting on its first hour
+        return [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+
+    assert asyncio.run(run()) == []

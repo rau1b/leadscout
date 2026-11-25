@@ -1,6 +1,8 @@
 """Local dashboard: `leadscout serve` then open http://127.0.0.1:8000"""
 
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -19,17 +21,44 @@ from leadscout.mailer.sender import daily_cap, next_item, sent_today, today_ist
 from leadscout.pitch import jobs, templates
 
 HERE = Path(__file__).parent
-@asynccontextmanager
-async def lifespan(_app):
+log = logging.getLogger("leadscout")
+
+
+def housekeeping() -> None:
+    """The daily jobs. Safe to call every hour: each one does its work at most once a day. Logs failures, never raises."""
     from leadscout.compliance import purge_if_due
 
+    daily = (
+        ("retention purge", lambda: purge_if_due(db.connect(), config.load())),  # drop never-contacted leads past the limit
+        ("daily backup", lambda: backups.nightly(db.connect(), db.default_path())),  # one copy a day, after the purge
+    )
+    for name, job in daily:
+        try:
+            job()
+        except Exception:
+            log.exception("%s failed", name)
+
+
+async def _housekeeping_every_hour() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        await asyncio.to_thread(housekeeping)  # off the event loop: a backup can take a moment
+
+
+@asynccontextmanager
+async def lifespan(_app):
     from leadscout.web import sending
 
-    purge_if_due(db.connect(), config.load())  # retention: drop never-contacted leads past the limit, once a day
-    backups.nightly(db.connect(), db.default_path())  # one copy a day in data/backups/, after the purge
+    housekeeping()
     sending.note_cut_off_run(db.connect())
     searches.start_worker()  # runs area searches queued from the Find leads page
-    yield
+    hourly = asyncio.create_task(_housekeeping_every_hour())  # so a dashboard left open for days still gets its daily jobs
+    try:
+        yield
+    finally:
+        hourly.cancel()
+        with suppress(asyncio.CancelledError):
+            await hourly
 
 
 app = FastAPI(title="LeadScout", lifespan=lifespan)
