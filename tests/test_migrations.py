@@ -89,7 +89,7 @@ def test_log_event_and_forget_deletes_events(tmp_path, monkeypatch):
     con.commit()
     assert con.execute("select data_json from events where business_id = 'a'").fetchone()[0] == '{"note": "Café"}'
 
-    assert forget(con, "a@shop.in") == 1
+    assert forget(con, "a@shop.in") == (1, [])
     assert [r[0] for r in con.execute("select business_id from events order by id")] == ["b", None]
 
 

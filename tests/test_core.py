@@ -275,7 +275,7 @@ def test_forget_matches_exact_email_only(con):
         con.execute("insert into businesses (id, source, name, emails, fetched_at) values (?, 't', ?, ?, '2026-11-20')",
                     (bid, bid, f'["{email}"]'))
     con.commit()
-    assert forget(con, "A@Shop.in") == 1
+    assert forget(con, "A@Shop.in") == (1, [])
     assert [r[0] for r in con.execute("select id from businesses")] == ["A"]
     assert is_suppressed(con, "a@shop.in")
 

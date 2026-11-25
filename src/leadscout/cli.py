@@ -197,7 +197,12 @@ def forget(value: str):
     from leadscout.compliance import forget as do_forget
 
     _, con = _ctx()
-    typer.echo(f"Deleted {do_forget(con, value)} business record(s). Kept a hashed opt-out entry so they're never contacted again.")
+    n, failed = do_forget(con, value)
+    typer.echo(f"Deleted {n} business record(s) and removed them from the backups. Kept a hashed opt-out entry so they're never contacted again.")
+    if failed:
+        typer.echo(f"Couldn't open {len(failed)} backup(s) in data/backups/, so they may still hold this person: {', '.join(failed)}. "
+                   "Delete those files by hand.", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()

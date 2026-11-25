@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sqlite3
 from datetime import datetime, time, timedelta
 
 import phonenumbers
@@ -74,8 +75,37 @@ def opt_out(con, value: str, reason: str) -> int:
     return cur.rowcount
 
 
-def forget(con, value: str) -> int:
-    """Delete every business holding this email/phone; keep only the hashed opt-out entry."""
+def forget(con, value: str) -> tuple[int, list[str]]:
+    """Delete every business holding this email/phone, here and in every backup; keep only the hashed opt-out entry.
+
+    Returns (businesses deleted from the live database, backup files that couldn't be cleaned).
+    """
+    ids = _forget_in(con, value)
+    _forget_in_pitch_files(ids)
+    return len(ids), _forget_in_backups(backups.folder(file_of(con)), value)
+
+
+def _forget_in_backups(folder, value: str) -> list[str]:
+    """Apply the same forget to each backup, so a restored copy neither holds the person nor contacts them again."""
+    failed = []
+    for f in sorted(folder.glob("*.db")):
+        try:
+            b = sqlite3.connect(f"{f.resolve().as_uri()}?mode=rw", uri=True, timeout=5)  # mode=rw: never create a file
+            try:
+                b.row_factory = sqlite3.Row
+                b.execute("pragma foreign_keys = on")  # so the business's leads, pitches, events... go with it
+                b.execute("pragma secure_delete = on")  # overwrite deleted rows instead of leaving them in free pages
+                _forget_in(b, value)
+                b.execute("vacuum")
+            finally:
+                b.close()
+        except sqlite3.Error:
+            failed.append(f.name)  # corrupt, locked or too old a schema: the caller tells you, and the rest still get cleaned
+    return failed
+
+
+def _forget_in(con, value: str) -> set[str]:
+    """Delete the matching businesses on this connection and add the hashed opt-out entry. Returns their ids."""
     key = normalize(value)
     rows = con.execute(
         """select b.id, b.phone, b.emails, a.found_emails, l.email from businesses b
@@ -91,8 +121,7 @@ def forget(con, value: str) -> int:
         con.execute("delete from businesses where id = ?", (bid,))
     suppress(con, value, "forget request")
     con.commit()
-    _forget_in_pitch_files(ids)
-    return len(ids)
+    return ids
 
 
 def _forget_in_pitch_files(ids: set[str]) -> None:

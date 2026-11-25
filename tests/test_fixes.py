@@ -630,7 +630,7 @@ def test_forget_matches_exactly_and_cleans_pitch_files(tmp_path, monkeypatch):
     (d / "pitch_results.json").write_text(json.dumps([{"id": "a", "body": "x"}, {"id": "data", "body": "y"}]), encoding="utf-8")
     (d / "pitch_results.imported.json").write_text(json.dumps([{"id": "found", "body": "z"}]), encoding="utf-8")
 
-    assert forget(con, "a@abc.in") == 2
+    assert forget(con, "a@abc.in") == (2, [])
     left = [r[0] for r in con.execute("select id from businesses")]
     assert left == ["data"] and is_suppressed(con, "a@abc.in")
     assert [x["id"] for x in json.loads((d / "pitch_jobs.json").read_text(encoding="utf-8"))["leads"]] == ["data"]
