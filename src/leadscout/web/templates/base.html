@@ -21,6 +21,7 @@
     <a href="/deals" {% if nav == 'deals' %}aria-current="page"{% endif %}>Deals <small>{{ counts.get('won', 0) }}</small></a>
     <a href="/sent" {% if nav == 'sent' %}aria-current="page"{% endif %}>Sent <small>{{ sent_total }}</small></a>
     <a href="/leads?status=opted_out" {% if nav == 'optouts' %}aria-current="page"{% endif %}>Opt-outs <small>{{ counts.get('opted_out', 0) }}</small></a>
+    <a href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>Settings</a>
   </nav>
   <div class="foot">Sending as {{ cfg.sender.email }}</div>
 </aside>

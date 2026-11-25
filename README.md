@@ -10,8 +10,10 @@ Finds Indian local businesses with no website or a weak one, audits them, drafts
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip install -e ".[dev]"
-.venv\Scripts\leadscout init        # creates config.toml: fill in [sender]
+.venv\Scripts\leadscout serve
 ```
+
+Open http://127.0.0.1:8000/settings, fill in your details under **Sender** (and check the rest), and press **Save settings**. That writes `config.toml` for you; you don't need to edit it by hand. Every save keeps the previous file in `data\backups\` for 14 days. (Saving rewrites the file, so comments you typed into it by hand are dropped; settings the page doesn't show are kept.)
 
 Optional but recommended, free, no card: a PageSpeed API key.
 Google Cloud console > new project > enable "PageSpeed Insights API" > Credentials > Create API key. Copy `.env.example` to `.env` and paste it as `GOOGLE_API_KEY=...`.
@@ -36,7 +38,7 @@ Double-click **LeadScout** on your desktop. It opens the dashboard in your brows
 5. **Replies** page: press **Check inbox**, open a reply, pick a ready answer (Price, Send mockup, Call, Examples, Not now), edit it and send. Fill in anything in [square brackets] first.
 6. **Deals**: on a lead, record what you quoted and what's been paid. The Deals page totals what you've won, received and are still owed.
 
-Your own ready answers: add them to `config.toml` under `[quick_replies]`, e.g. `"Timeline" = "Most sites go live in a week, {name}."`
+Your own ready answers (not on the Settings page yet): add them to `config.toml` under `[quick_replies]`, e.g. `"Timeline" = "Most sites go live in a week, {name}."`
 
 Pitches say "here in <your city>" only for leads in your own city; for other cities they say you're based in your city and work across India online.
 

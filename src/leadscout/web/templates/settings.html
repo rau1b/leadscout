@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Settings · LeadScout{% endblock %}
+
+{% macro field(name, label, type="text", hint="", wide=False, extra="") %}
+<div class="field{% if wide %} wide{% endif %}">
+  <label for="{{ name }}">{{ label }}</label>
+  <input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ v.get(name) or '' }}" {{ extra|safe }}
+         {% if errors.get(name) %}aria-invalid="true" aria-describedby="{{ name }}-err"{% elif hint %}aria-describedby="{{ name }}-hint"{% endif %}>
+  {% if errors.get(name) %}<p class="err" id="{{ name }}-err">{{ errors[name] }}</p>{% elif hint %}<p class="hint" id="{{ name }}-hint">{{ hint }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro area(name, label, hint="") %}
+<div class="field wide">
+  <label for="{{ name }}">{{ label }}</label>
+  <textarea id="{{ name }}" name="{{ name }}" rows="4"
+            {% if errors.get(name) %}aria-invalid="true" aria-describedby="{{ name }}-err"{% elif hint %}aria-describedby="{{ name }}-hint"{% endif %}>{{ v.get(name) or '' }}</textarea>
+  {% if errors.get(name) %}<p class="err" id="{{ name }}-err">{{ errors[name] }}</p>{% elif hint %}<p class="hint" id="{{ name }}-hint">{{ hint }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% block main %}
+<div class="head">
+  <h1>Settings</h1>
+  <span class="meta">Saved to <code>config.toml</code>. Changes apply at once, even to sending already under way.</span>
+</div>
+
+{% if errors %}
+<p class="note bad" role="alert">{{ errors|length }} {{ 'setting needs' if errors|length == 1 else 'settings need' }} fixing. Nothing was saved.</p>
+{% elif saved %}
+<p class="note" role="status">{% if saved == '0' %}Nothing had changed.{% else %}Saved. {{ saved }} {{ 'setting' if saved == '1' else 'settings' }} changed; the old file is in <code>data/backups/</code>.{% endif %}</p>
+{% endif %}
+{% if problem %}<p class="note" role="status">{{ problem }}</p>{% endif %}
+{% if not has_file %}<p class="note">There's no <code>config.toml</code> yet, so these are the example values. Saving this page creates it.</p>{% endif %}
+
+<form class="settings" method="post" action="/settings" novalidate>
+  <section aria-labelledby="s-sender">
+    <header><h2 id="s-sender">Sender</h2><p class="hint">Who the pitches come from. Every email is signed with these.</p></header>
+    <div class="grid">
+      {{ field("sender.name", "Your name") }}
+      {{ field("sender.business", "Business") }}
+      {{ field("sender.email", "Gmail address", "email", "The account LeadScout sends from.", extra='autocomplete="email"') }}
+      {{ field("sender.phone", "Phone", "tel", "Indian number, e.g. +91 98765 43210.", extra='autocomplete="tel"') }}
+      {{ field("sender.city", "City", hint="Pitches to this city say \"here in\" it.") }}
+      {{ field("sender.portfolio", "Portfolio link", "url") }}
+    </div>
+  </section>
+
+  <section aria-labelledby="s-pitch">
+    <header><h2 id="s-pitch">Pitch</h2><p class="hint">Used in every pitch, built-in or from Claude Code.</p></header>
+    <div class="grid">
+      {{ field("pitch.offer", "Free first step", hint="What you offer at no cost, e.g. a free mockup of their new homepage.", wide=True) }}
+      {{ field("pitch.pitch_line", "What you do", hint="One line, e.g. I build fast, mobile-first websites for local businesses.", wide=True) }}
+    </div>
+  </section>
+
+  <section aria-labelledby="s-sending">
+    <header><h2 id="s-sending">Sending</h2><p class="hint">All times are IST. These limits protect your Gmail account and the people you write to.</p></header>
+    <div class="grid">
+      {{ field("sending.window_start", "Send from", "time") }}
+      {{ field("sending.window_end", "Send until", "time") }}
+      <fieldset class="field wide days"{% if errors.get('sending.days') %} aria-describedby="sending.days-err"{% endif %}>
+        <legend>Sending days</legend>
+        {% for d in days %}<label class="check"><input type="checkbox" name="sending.days" value="{{ d }}" {% if d in (v.get('sending.days') or []) %}checked{% endif %}> {{ d }}</label>{% endfor %}
+        {% if errors.get('sending.days') %}<p class="err" id="sending.days-err">{{ errors['sending.days'] }}</p>{% endif %}
+      </fieldset>
+      <fieldset class="field wide warmup">
+        <legend>Emails a day while warming up</legend>
+        <div class="trio">
+        {% for label in warmup_labels %}{% set n = 'sending.warmup.' ~ loop.index0 %}
+          {{ field(n, label|capitalize, "number", extra='min="1" inputmode="numeric"') }}
+        {% endfor %}
+        </div>
+        <p class="hint">Counted from your first send. New Gmail accounts get flagged when they start fast.</p>
+      </fieldset>
+      {{ field("sending.min_gap_seconds", "Shortest gap between emails", "number", "Seconds.", extra='min="1" inputmode="numeric"') }}
+      {{ field("sending.max_gap_seconds", "Longest gap between emails", "number", "Seconds. Each gap is picked at random in between.", extra='min="1" inputmode="numeric"') }}
+      {{ field("sending.followup_after_days", "Follow up after", "number", "Days without a reply.", extra='min="1" inputmode="numeric"') }}
+      {{ field("sending.max_followups", "Follow-ups", "number", "0 or 1. The India rules allow one at most.", extra='min="0" max="1" inputmode="numeric"') }}
+      {{ field("sending.max_bounce_rate", "Pause when bounces pass", "text", "Percent of the last 40 emails, e.g. 5.", extra='inputmode="decimal"') }}
+      {{ field("sending.whatsapp_daily_cap", "New WhatsApp chats a day", "number", "Opened by hand from the dashboard.", extra='min="1" inputmode="numeric"') }}
+      {{ area("sending.skip_dates", "Days off", "One date per line, YYYY-MM-DD. Add your region's festivals each year; they move.") }}
+    </div>
+  </section>
+
+  <section aria-labelledby="s-scoring">
+    <header><h2 id="s-scoring">Scoring</h2><p class="hint">Which businesses get pitched. Changes apply the next time leads are scored.</p></header>
+    <div class="grid">
+      {{ field("scoring.min_score", "Lowest score to pitch", "number", "0 to 100.", extra='min="0" max="100" inputmode="numeric"') }}
+      {{ area("scoring.high_value", "Worth more", "Category words, one per line. A match raises the score: they can pay for a website.") }}
+      {{ area("scoring.excluded", "Never pitch", "Category words, one per line. A match keeps the business out.") }}
+    </div>
+  </section>
+
+  <section aria-labelledby="s-data">
+    <header><h2 id="s-data">Data</h2><p class="hint">How long LeadScout keeps things (see the India rules).</p></header>
+    <div class="grid">
+      {{ field("retention.purge_uncontacted_after_days", "Delete never-contacted businesses after", "number", "Days.", extra='min="1" inputmode="numeric"') }}
+      {{ field("backups.keep_days", "Keep backups for", "number", "Days. Older copies in data/backups/ are deleted.", extra='min="1" inputmode="numeric"') }}
+      <div class="field wide">
+        <span class="label">PageSpeed key</span>
+        <p class="keyline">{% if has_key %}<b class="ok">Set</b> in <code>.env</code>.{% else %}<b>Not set.</b> Add <code>GOOGLE_API_KEY=...</code> to <code>.env</code> for speed scores (free; see the README).{% endif %}
+          Keys and the Gmail login never go on this page.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="savebar">
+    <button class="btn">Save settings</button>
+    <a class="btn quiet" href="/settings">Undo changes</a>
+  </div>
+</form>
+{% endblock %}

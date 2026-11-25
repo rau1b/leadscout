@@ -79,7 +79,7 @@ def _work(gmail) -> None:
     con = db.connect()
     db.set_meta(con, RUNNING_KEY, db.now())
     try:
-        sender.run(con, config.load(), gmail, log=_say, stop=_stop)
+        sender.run(con, config.load(), gmail, log=_say, stop=_stop, reload=config.load)
     except Exception as e:  # shown on the page, rather than lost in a thread
         _say(f"Stopped on an error: {e}")
     finally:

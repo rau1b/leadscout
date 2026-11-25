@@ -53,7 +53,7 @@ The dashboard's **Find leads** page queues area searches (city + optional neighb
 
 ## Sending safety
 
-- Warm-up caps from first send: 15/day week 1, 30/day week 2, 50/day from week 3 (`config.toml`).
+- Warm-up caps from first send: 15/day week 1, 30/day week 2, 50/day from week 3 (Settings page, saved in `config.toml`).
 - Only 10:00 to 17:00 IST, Monday to Saturday; 3 to 6 minutes between emails.
 - One follow-up after 4 days, in the same Gmail thread.
 - Pauses itself if more than 5% of the last 40 first emails bounced.
@@ -80,7 +80,7 @@ Copies older than `[backups] keep_days` (14 by default) are deleted after each b
 
 ### Restoring a backup
 
-1. List the backups: open `dataackups` in File Explorer, or run `dir dataackups` (PowerShell: `ls data/backups`). The name says when each was taken.
+1. List the backups: open `data\backups` in File Explorer, or run `dir data\backups` (PowerShell: `ls data/backups`). The name says when each was taken.
 2. Stop the dashboard: `leadscout stop` for the desktop icon, or Ctrl+C in the terminal running `leadscout serve`. Restore refuses to run while a dashboard answers.
 3. `leadscout restore leadscout-20261124-093000-nightly.db` (a name from that folder, or a full path).
 
@@ -91,7 +91,7 @@ Restore first saves the current database as `...-pre-restore.db`, so you can und
 ```
 src/leadscout/
   cli.py, config.py, db.py, compliance.py, scoring.py, emailcheck.py
-  migrations/ 0001_baseline.sql, ... (numbered schema changes); backups.py
+  migrations/ 0001_baseline.sql, ... (numbered schema changes); backups.py; settings.py (the Settings page's form and save)
   sources/   geo.py (Nominatim), overture.py, csv_import.py, common.py
   audit/     classify.py, site.py, pagespeed.py, __init__.py (runner)
   pitch/     templates.py, jobs.py (Claude Code hand-off)

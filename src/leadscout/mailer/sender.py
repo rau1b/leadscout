@@ -279,11 +279,12 @@ def drop_lease(con, owner: str) -> None:
     con.commit()
 
 
-def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None) -> None:
+def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, stop=None, reload=None) -> None:
     """Send until the cap, the window, the bounce limit or the queue stops it. `stop` (a threading.Event) ends it early.
-    Only one run sends at a time, whether from `leadscout send` or the dashboard."""
+    Only one run sends at a time, whether from `leadscout send` or the dashboard. `reload` (e.g. config.load) is
+    called before each email, so a change on the Settings page applies to a run that's already going."""
     if dry_run:
-        return _run(con, cfg, gmail, dry_run, once, log, stop)
+        return _run(con, cfg, gmail, dry_run, once, log, stop, reload=reload)
     import os
     import threading
 
@@ -292,15 +293,18 @@ def run(con, cfg, gmail, dry_run: bool = False, once: bool = False, log=print, s
         log("Another sender is already running (leadscout send or the dashboard). Stop that one first.")
         return
     try:
-        return _run(con, cfg, gmail, dry_run, once, log, stop, lambda: take_lease(con, cfg.sending, owner))
+        return _run(con, cfg, gmail, dry_run, once, log, stop, lambda: take_lease(con, cfg.sending, owner), reload)
     finally:
         drop_lease(con, owner)
 
 
-def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
+def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True, reload=None) -> None:
     sc = cfg.sending
     fails = 0
     while True:
+        if reload is not None:
+            cfg = reload()
+            sc = cfg.sending
         if not renew():
             log("Another sender took over. Stopping.")
             return

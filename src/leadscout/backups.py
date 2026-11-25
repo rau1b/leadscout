@@ -9,7 +9,8 @@ from pathlib import Path
 from leadscout import config
 from leadscout.config import IST
 
-STAMP = re.compile(r"-(\d{8}-\d{6})-[^-]+\.db$")
+# leadscout-<stamp>-<reason>.db, and config-<stamp>.toml from the Settings page.
+STAMP = re.compile(r"-(\d{8}-\d{6})(?:-[^-]+)?\.(?:db|toml)$")
 
 
 def folder(db_path: Path) -> Path:
@@ -103,7 +104,7 @@ def prune(d: Path, keep_days: int = 14) -> list[str]:
     """Delete backups older than keep_days. Age comes from the name, not the file time: forget rewrites old backups."""
     cutoff = datetime.now(IST).replace(tzinfo=None) - timedelta(days=keep_days)
     gone = []
-    for f in sorted(Path(d).glob("*.db")):
+    for f in sorted(Path(d).glob("*")):
         m = STAMP.search(f.name)
         if m and datetime.strptime(m.group(1), "%Y%m%d-%H%M%S") < cutoff:
             for p in (f, f.with_name(f.name + "-wal"), f.with_name(f.name + "-shm"), f.with_name(f.name + "-journal")):

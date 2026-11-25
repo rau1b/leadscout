@@ -169,7 +169,7 @@ def send(dry_run: bool = typer.Option(False, help="Show what would be sent witho
     if not dry_run:
         _require_sender(cfg)
         gm = _gmail()
-    sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo)
+    sender.run(con, cfg, gm, dry_run=dry_run, once=once, log=typer.echo, reload=config.load)
 
 
 @app.command("check-replies")

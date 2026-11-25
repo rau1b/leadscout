@@ -694,7 +694,7 @@ def test_dashboard_starts_and_stops_sending(client, home, monkeypatch):
     home.commit()
     gate = threading.Event()
 
-    def run(con, cfg, gmail, log, stop):  # stands in for sender.run: no network, waits to be stopped
+    def run(con, cfg, gmail, log, stop, reload=None):  # stands in for sender.run: no network, waits to be stopped
         log("running")
         gate.set()
         stop.wait(5)
@@ -894,3 +894,12 @@ def test_unsubscribe_after_a_bounce_becomes_an_opt_out(con, cfg):
 
     assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 1
     assert is_opted_out(con, "owner@clinic.in")
+
+
+def test_sender_picks_up_new_settings_between_emails(con, cfg):
+    """A Settings change reaches a run that's already going: the config is re-read before each email."""
+    _seed_lead(con)
+    closed = config.Config({**cfg.raw, "sending": {**cfg.sending, "days": []}})  # e.g. all days unticked on the Settings page
+    logs = []
+    sender.run(con, cfg, SendingGmail(), log=logs.append, reload=lambda: closed)
+    assert logs and logs[0].startswith("Outside the sending window")
