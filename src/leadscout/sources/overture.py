@@ -3,6 +3,8 @@
 Docs: https://docs.overturemaps.org/guides/places
 """
 
+import time
+
 import duckdb
 from overturemaps import core
 
@@ -10,12 +12,24 @@ from leadscout.sources.common import pick_website, upsert_business
 from leadscout.sources.geo import BBox
 
 
-def download(bbox: BBox):
-    """Download every place in the box as an Arrow table (only the matching files are fetched)."""
-    reader = core.record_batch_reader("place", bbox=bbox)
-    if reader is None:
-        raise RuntimeError("Overture returned no data for this area.")
-    return reader.read_all()
+RETRY_WAITS = (10, 30, 60)  # seconds before each retry
+
+
+def download(bbox: BBox, waits=RETRY_WAITS, sleep=time.sleep):
+    """Download every place in the box as an Arrow table (only the matching files are fetched).
+
+    A dropped connection mid-download (e.g. "AWS Error NETWORK_CONNECTION during GetObject") starts the
+    download again after a short wait, up to len(waits) times, before giving up."""
+    for attempt in range(len(waits) + 1):
+        try:
+            reader = core.record_batch_reader("place", bbox=bbox)
+            if reader is None:
+                raise RuntimeError("Overture returned no data for this area.")
+            return reader.read_all()
+        except OSError:
+            if attempt == len(waits):
+                raise
+            sleep(waits[attempt])
 
 
 QUERY = """
