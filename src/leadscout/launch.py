@@ -84,17 +84,23 @@ def _kill(pid: int) -> None:
         os.kill(pid, 15)
 
 
-def stop() -> bool:
-    """Stop the dashboard we started. After a reboot the saved PID may belong to another program: leave that alone."""
+def dashboard_pid() -> int | None:
+    """The desktop dashboard's process ID, or None. After a reboot the saved PID may belong to another program."""
     if not PID_FILE.exists():
-        return False
+        return None
     text = PID_FILE.read_text().strip()
-    PID_FILE.unlink(missing_ok=True)
     if not text.isdigit():
-        return False
+        return None
     pid = int(text)
-    if "leadscout.web.app" not in _command_line(pid):
-        return False  # stale pid file
+    return pid if "leadscout.web.app" in _command_line(pid) else None
+
+
+def stop() -> bool:
+    """Stop the dashboard we started, and leave any other program with that PID alone."""
+    pid = dashboard_pid()
+    PID_FILE.unlink(missing_ok=True)
+    if pid is None:
+        return False
     _kill(pid)
     return True
 

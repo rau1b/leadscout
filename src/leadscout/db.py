@@ -38,6 +38,7 @@ def connect(path=None) -> sqlite3.Connection:
     con = sqlite3.connect(path, timeout=30, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("pragma foreign_keys = on")
+    con.execute("pragma secure_delete = on")  # deleted rows (forget, purge...) are overwritten, not left in free pages
     if missing or str(path) not in _ready:
         with _ready_lock:
             if missing or str(path) not in _ready:  # another thread may have migrated it while we waited

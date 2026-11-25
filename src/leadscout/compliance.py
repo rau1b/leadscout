@@ -107,21 +107,27 @@ def _forget_in_backups(folder, value: str) -> list[str]:
 def _forget_in(con, value: str) -> set[str]:
     """Delete the matching businesses on this connection and add the hashed opt-out entry. Returns their ids."""
     key = normalize(value)
-    rows = con.execute(
-        """select b.id, b.phone, b.emails, a.found_emails, l.email from businesses b
-           left join audits a on a.business_id = b.id left join leads l on l.business_id = b.id"""
-    ).fetchall()
-
-    def holds(r) -> bool:
-        emails = {e.strip().lower() for e in jload(r["emails"]) + jload(r["found_emails"]) + [r["email"] or ""]}
-        return key in emails or (r["phone"] and normalize(r["phone"]) == key)
-
-    ids = {r["id"] for r in rows if holds(r)}
+    ids = {bid for bid, held in contacts(con) if key in held}
     for bid in ids:
         con.execute("delete from businesses where id = ?", (bid,))
     suppress(con, value, "forget request")
     con.commit()
     return ids
+
+
+def contacts(con) -> list[tuple[str, set[str]]]:
+    """(business id, every email and phone stored for it, normalized), from businesses, audits and leads."""
+    rows = con.execute(
+        """select b.id, b.phone, b.emails, a.found_emails, l.email from businesses b
+           left join audits a on a.business_id = b.id left join leads l on l.business_id = b.id"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        held = {e.strip().lower() for e in jload(r["emails"]) + jload(r["found_emails"]) + [r["email"] or ""]} - {""}
+        if r["phone"]:
+            held.add(normalize(r["phone"]))
+        out.append((r["id"], held))
+    return out
 
 
 def _forget_in_pitch_files(ids: set[str]) -> None:

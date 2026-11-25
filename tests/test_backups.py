@@ -109,3 +109,15 @@ def test_forget_cli_reports_unreadable_backups(tmp_path, monkeypatch):
     (d / "broken.db").write_bytes(b"x" * 1000)
     out = CliRunner().invoke(app, ["forget", "gone@shop.in"])
     assert out.exit_code == 1 and "broken.db" in out.output
+
+
+def test_forget_overwrites_the_live_database_file(tmp_path, monkeypatch):
+    from leadscout.compliance import forget
+
+    con = _people(tmp_path, monkeypatch)
+    con.execute("pragma wal_checkpoint(truncate)")
+    assert b"gone@shop.in" in db.default_path().read_bytes()  # so the check below means something
+    forget(con, "gone@shop.in")
+    con.execute("pragma wal_checkpoint(truncate)")
+    data = db.default_path().read_bytes()
+    assert b"gone@shop.in" not in data and b"stays@shop.in" in data
