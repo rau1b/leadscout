@@ -57,11 +57,20 @@ The dashboard's **Find leads** page queues area searches (city + optional neighb
 - Pauses itself if more than 5% of the last 40 first emails bounced.
 - Every send checks the hashed opt-out list first.
 
+## Database migrations
+
+The schema lives in numbered SQL files in `src/leadscout/migrations/`. `db.connect()` applies the ones the database hasn't had yet, once per process, each in its own transaction, and records the last one in `pragma user_version`.
+
+To change the schema, add the next file, for example `0003_add_lead_tags.sql`, holding plain SQL (`create table`, `alter table ... add column`, `create index`). Never edit a migration that has already shipped; write a new one. Add a test in `tests/test_migrations.py` if the migration moves data.
+
+Before migrating a database that already has tables, LeadScout saves a copy to `data/backups/leadscout-<timestamp>-v<old version>.db`. A database from before numbered migrations (version 0) gets the old `_migrate()` fix-ups once and then becomes version 1. Backups keep data that `leadscout forget` and the retention purge later delete, so delete them once the new version works.
+
 ## Layout
 
 ```
 src/leadscout/
   cli.py, config.py, db.py, compliance.py, scoring.py, emailcheck.py
+  migrations/ 0001_baseline.sql, ... (numbered schema changes)
   sources/   geo.py (Nominatim), overture.py, csv_import.py, common.py
   audit/     classify.py, site.py, pagespeed.py, __init__.py (runner)
   pitch/     templates.py, jobs.py (Claude Code hand-off)
