@@ -13,3 +13,4 @@ Hard rules:
 - Pitches cite only measured facts; no invented numbers, reviews or claims.
 - Respect warm-up caps, IST sending window and the bounce pause in `mailer/sender.py`.
 - Tests never hit the network or send email.
+- Stop the dashboard (`leadscout stop`) before `pip install`; on Windows a running dashboard locks .venv\Scripts\leadscout.exe.
