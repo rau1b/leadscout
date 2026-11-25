@@ -251,7 +251,7 @@ def restore(backup_file: str = typer.Argument(..., help="A file in data/backups/
     typer.echo(f"Restored {r['file']} (taken {r['taken']:%d %b %Y %H:%M}).")
     if r["from_version"] < r["version"]:
         typer.echo(f"Upgraded it from database version {r['from_version']} to {r['version']}.")
-    typer.echo(f"Removed {r['removed']} business(es) on the opt-out list (opted out or asked to be forgotten).")
+    typer.echo(f"Deleted {r['removed']} business(es) that asked to be forgotten; marked {r['opted_out']} lead(s) opted out.")
     typer.echo(f"Your database as it was before the restore is saved as {r['pre_restore'].name}.")
 
 

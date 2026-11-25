@@ -4,7 +4,7 @@ import random
 import time
 from datetime import date, datetime, timedelta
 
-from leadscout.compliance import in_window, is_suppressed, opt_out, suppress
+from leadscout.compliance import in_window, is_opted_out, is_suppressed, opt_out, suppress
 from leadscout.config import IST
 from leadscout.db import get_meta, now, set_meta
 from leadscout.pitch import templates
@@ -217,7 +217,7 @@ def check_replies(con, cfg, gmail) -> dict:
     ask = getattr(gmail, "unsubscribe_requests", lambda _me, since=None: set())
     found = ask(cfg.sender["email"], since=datetime.fromisoformat(last) if last else None)
     for addr in found or ():
-        if not is_suppressed(con, addr):
+        if not is_opted_out(con, addr):  # a bounced address that unsubscribes becomes an opt-out
             opt_out(con, addr, "unsubscribe button")
             counts["opted_out"] += 1
     if found is not None:

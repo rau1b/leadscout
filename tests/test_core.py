@@ -880,3 +880,17 @@ def test_unsubscribe_check_only_reads_new_mail(con, cfg):
     sender.check_replies(con, cfg, Gm([]))
     sender.check_replies(con, cfg, Gm([]))
     assert calls[0] is None and calls[1] is not None
+
+
+def test_unsubscribe_after_a_bounce_becomes_an_opt_out(con, cfg):
+    from leadscout.compliance import is_opted_out
+
+    _seed_lead(con)
+    suppress(con, "owner@clinic.in", "bounced")
+
+    class Gm(FakeGmail):
+        def unsubscribe_requests(self, me, since=None):
+            return {"owner@clinic.in"}
+
+    assert sender.check_replies(con, cfg, Gm([]))["opted_out"] == 1
+    assert is_opted_out(con, "owner@clinic.in")

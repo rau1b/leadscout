@@ -30,10 +30,25 @@ def _hash(value: str) -> str:
     return hashlib.sha256(normalize(value).encode()).hexdigest()
 
 
+FORGET = "forget request"
+
+# A value can be suppressed for several reasons over time; the strongest one is kept, never downgraded:
+# a forget request > any opt-out ("manual", "dashboard", "opted_out", "unsubscribe button"...) > a bounce.
+_RANK = "(case {} when 'forget request' then 2 when 'bounced' then 0 else 1 end)"
+_UPSERT = f"""insert into suppression (value_hash, reason, added_at) values (?, ?, ?)
+              on conflict (value_hash) do update set reason = excluded.reason, added_at = excluded.added_at
+              where {_RANK.format("excluded.reason")} > {_RANK.format("suppression.reason")}"""
+
+
+def add_suppression_rows(con, rows) -> None:
+    """Insert (value_hash, reason, added_at) rows, keeping the stronger reason where a hash is already listed."""
+    con.executemany(_UPSERT, rows)
+
+
 def suppress(con, value: str | None, reason: str) -> None:
     if not value:
         return  # e.g. a bounce on a lead that has no email stored
-    con.execute("insert or ignore into suppression(value_hash, reason, added_at) values(?, ?, ?)", (_hash(value), reason, now()))
+    add_suppression_rows(con, [(_hash(value), reason, now())])
     con.commit()
 
 
@@ -110,7 +125,7 @@ def _forget_in(con, value: str) -> set[str]:
     ids = {bid for bid, held in contacts(con) if key in held}
     for bid in ids:
         con.execute("delete from businesses where id = ?", (bid,))
-    suppress(con, value, "forget request")
+    suppress(con, value, FORGET)
     con.commit()
     return ids
 

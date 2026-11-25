@@ -46,11 +46,13 @@ def nightly(con, path: Path) -> Path | None:
 def restore(db_path: Path, src: Path) -> dict:
     """Replace the live database with the backup `src`. The dashboard must not be running.
 
-    Saves a "pre-restore" copy first, migrates the restored data if it's an older version, then re-applies the
-    suppression list from both, so a restore never brings back someone who was forgotten or opted out since.
+    Saves a "pre-restore" copy first, migrates the restored data if it's an older version, then merges the
+    suppression lists of both and applies them as the live rules do, so a restore never brings back someone who
+    was forgotten or opted out since: forgotten businesses are deleted, opted-out leads are marked opted_out
+    (history kept), bounces are left alone (sending skips them anyway).
     """
     from leadscout import db
-    from leadscout.compliance import _hash, contacts
+    from leadscout.compliance import FORGET, _hash, add_suppression_rows, contacts
 
     db_path, src = Path(db_path).resolve(), Path(src).resolve()
     # Read the backup first: the pre-restore copy prunes expired backups, and that could include `src`.
@@ -73,20 +75,28 @@ def restore(db_path: Path, src: Path) -> dict:
     con = db.connect(db_path)  # runs any migrations the restored data is missing
 
     p = sqlite3.connect(pre)
-    con.executemany("insert or ignore into suppression (value_hash, reason, added_at) values (?, ?, ?)",
-                    p.execute("select value_hash, reason, added_at from suppression").fetchall())
+    add_suppression_rows(con, p.execute("select value_hash, reason, added_at from suppression").fetchall())
     p.close()
-    # A bounce isn't a request from the person (see compliance.is_opted_out), so bounced leads stay.
-    blocked = {r[0] for r in con.execute("select value_hash from suppression where reason != 'bounced'")}
-    removed = [bid for bid, held in contacts(con) if any(_hash(v) in blocked for v in held)]
+    reasons = dict(con.execute("select value_hash, reason from suppression").fetchall())
+    forgotten = {h for h, why in reasons.items() if why == FORGET}
+    opted_out = {h for h, why in reasons.items() if why not in (FORGET, "bounced")}
+
+    removed = [bid for bid, held in contacts(con) if any(_hash(v) in forgotten for v in held)]
     for bid in removed:
         con.execute("delete from businesses where id = ?", (bid,))
+    # As compliance.opt_out() does: the lead's email or the business phone. A won lead is left for you to decide,
+    # as with a "no" reply (mailer.sender.check_replies), since a restore is automatic.
+    leads = con.execute("select l.business_id, l.email, b.phone from leads l join businesses b on b.id = l.business_id "
+                        "where l.status not in ('opted_out', 'won')").fetchall()
+    marked = [r[0] for r in leads if any(v and _hash(v) in opted_out for v in r[1:])]
+    con.executemany("update leads set status = 'opted_out', updated_at = ? where business_id = ?", [(db.now(), bid) for bid in marked])
     con.commit()
     version = con.execute("pragma user_version").fetchone()[0]
     con.close()
     m = STAMP.search(src.name)
     taken = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S") if m else datetime.fromtimestamp(src.stat().st_mtime)
-    return {"file": src.name, "taken": taken, "from_version": old_version, "version": version, "removed": len(removed), "pre_restore": pre}
+    return {"file": src.name, "taken": taken, "from_version": old_version, "version": version, "removed": len(removed), "opted_out": len(marked),
+            "pre_restore": pre}
 
 
 def prune(d: Path, keep_days: int = 14) -> list[str]:

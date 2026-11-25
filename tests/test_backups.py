@@ -185,26 +185,31 @@ def test_restore_brings_back_the_backup(tmp_path, monkeypatch):
     assert "c" in {x[0] for x in _rows(sqlite3.connect(r["pre_restore"]), "select id from businesses")}  # the state before is kept
 
 
-def test_restore_never_brings_back_someone_forgotten_or_opted_out_since(tmp_path, monkeypatch):
-    from leadscout.compliance import _hash, forget, opt_out
+def test_restore_follows_the_live_suppression_rules(tmp_path, monkeypatch):
+    from leadscout.compliance import FORGET, _hash, forget, opt_out, suppress
 
-    con = _people(tmp_path, monkeypatch)
-    con.execute("insert into businesses (id, source, name, phone, fetched_at) values ('c', 't', 'Shop c', '9876543210', '2026-11-20')")
-    con.commit()
+    con = _people(tmp_path, monkeypatch)  # a: gone@shop.in, b: stays@shop.in, each with a lead
+    con.execute("update leads set email = 'stays@shop.in', status = 'contacted' where business_id = 'b'")
+    con.execute("insert into outreach (business_id, channel, kind, to_addr, sent_at) values ('b', 'email', 'first', 'stays@shop.in', '2026-11-20')")
+    con.execute("insert into businesses (id, source, name, emails, fetched_at) values ('c', 't', 'Shop c', '[\"dead@shop.in\"]', '2026-11-20')")
+    suppress(con, "gone@shop.in", "bounced")  # in the backup only as a bounce
     # A copy kept outside data/backups/, so forget can't clean it.
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     saved = backups.backup_now(con, db.default_path(), "manual").replace(elsewhere / "leadscout-20261120-100000-manual.db")
     forget(con, "gone@shop.in")
-    opt_out(con, "+91 98765 43210", "manual")
+    opt_out(con, "stays@shop.in", "dashboard")
+    suppress(con, "dead@shop.in", "bounced")
     con.close()
 
     r = backups.restore(db.default_path(), saved)
     con = db.connect()
-    assert _rows(con, "select id from businesses") == [("b",)]
-    assert r["removed"] == 2
-    for value in ("gone@shop.in", "+919876543210"):
-        assert con.execute("select 1 from suppression where value_hash = ?", (_hash(value),)).fetchone()
+    assert (r["removed"], r["opted_out"]) == (1, 1)
+    assert _rows(con, "select id from businesses order by id") == [("b",), ("c",)]  # forgotten: deleted; the bounce is kept
+    assert _rows(con, "select status from leads where business_id = 'b'") == [("opted_out",)]  # opted out: kept, marked
+    assert _rows(con, "select to_addr from outreach") == [("stays@shop.in",)]  # with its history
+    reason = lambda v: con.execute("select reason from suppression where value_hash = ?", (_hash(v),)).fetchone()[0]  # noqa: E731
+    assert (reason("gone@shop.in"), reason("stays@shop.in"), reason("dead@shop.in")) == (FORGET, "dashboard", "bounced")
 
 
 def test_restore_migrates_an_older_backup(tmp_path, monkeypatch):
@@ -241,3 +246,22 @@ def test_restore_refuses_while_the_dashboard_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(launch, "running", lambda: True)  # a terminal `leadscout serve`
     out = CliRunner().invoke(app, ["restore", "anything.db"])
     assert out.exit_code == 1 and "Ctrl+C" in out.output
+
+
+def test_suppression_keeps_the_strongest_reason(tmp_path):
+    from leadscout.compliance import FORGET, is_opted_out, is_suppressed, opt_out, suppress
+
+    con = db.connect(tmp_path / "t.db")
+    row = lambda: tuple(con.execute("select reason, added_at from suppression").fetchone())  # noqa: E731
+
+    suppress(con, "a@x.in", "bounced")
+    opt_out(con, "a@x.in", "dashboard")  # bounce, then opt-out: becomes an opt-out
+    assert row()[0] == "dashboard" and is_suppressed(con, "a@x.in") and is_opted_out(con, "a@x.in")
+
+    con.execute("update suppression set added_at = 'when it was opted out'")
+    suppress(con, "a@x.in", "bounced")  # opt-out, then bounce: stays an opt-out, date untouched
+    assert row() == ("dashboard", "when it was opted out")
+
+    suppress(con, "a@x.in", FORGET)  # anything, then forget: forget
+    suppress(con, "a@x.in", "opted_out")  # and nothing downgrades it again
+    assert row()[0] == FORGET
