@@ -22,17 +22,26 @@ from leadscout.config import data_dir
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.readonly"]
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
-# A reply that says no, in English or Hinglish, or asks to stop. ("No problem, send it" is a yes, so a
-# leading "no" only counts when followed by punctuation, the end, or a word like "thanks" or "need".)
-# When unsure, it errs towards opting out: losing a lead is cheaper than emailing someone who said no.
-NO_WORDS = re.compile(
-    r"^\s*(no|nope|nah|nahi|nahin|nai)\s*([.!,]|$|thanks|thank|need|sir|ji|ma'?am)"
-    r"|\bno (thanks|thank you|need)\b"
-    r"|\bnot (interested|now|required|needed|looking|right now)\b"
-    r"|\b(nahi|nahin|nai) (chahiye|chahie|chaiye|chahte)\b|\babhi (nahi|nahin|nai)\b|\b(zaroorat|zarurat|jarurat|jaroorat) nahi"
-    r"|unsubscribe|\bremove (me|us)\b|\bremove (my|our) (e-?mail|email address|number|phone|name|details|contact)|\bstop (emailing|sending|messaging|contacting)"
-    r"|\b(don'?t|do not) (email|contact|message)"
-    r"|\b(don'?t|do not) need (a |any |the |your )?(website|site|it|this|that|anything|services?)\b",
+# An opt-out blocks a business forever, so only clear "no"s count (docs/INDIA_RULES.md), in two shapes:
+# 1. an explicit request to stop, anywhere in the reply;
+STOP_REQUEST = re.compile(
+    r"unsubscribe|\bremove (me|us)\b|\bremove (my|our) (e-?mail|email address|number|phone|name|details|contact)"
+    r"|\bstop (e-?mailing|sending|messaging|contacting|mailing)\b"
+    r"|\b(don'?t|do not|never) (e-?mail|contact|message|mail|write to) (me|us)\b",
+    re.I,
+)
+# 2. a short reply that is only a "no": once its no-phrases, politeness and greeting are removed, nothing is left.
+# "No, all good. Thanks!" and "Not interested in SEO. But a new site, yes." leave words behind, so they stay replies.
+NO_PHRASE = re.compile(
+    r"\bnot (interested|required|needed|(right )?now)\b|\b((we are|we're|i am|i'm) )?not looking\b|\bno need\b"
+    r"|\b((we|i) )?(don'?t|do not) need (a |any |the |your )?(website|site|it|this|that|anything|services?)\b"
+    r"|\babhi (nahi|nahin|nai)\b|\b(nahi|nahin|nai) (chahiye|chahie|chaiye|chahte)\b|\b(zaroorat|zarurat|jarurat|jaroorat) nahi( hai)?\b"
+    r"|\b(no|nope|nah|nahi|nahin|nai)\b",
+    re.I,
+)
+POLITE = re.compile(
+    r"\b(thank you|thanks?|thanku|thx|sorry|sir|madam|ma'?am|ji|bhai|please|pls|regards|hi|hello|hey|dear|namaste|namaskar"
+    r"|(we )?already have (a |our own )?(website|site|one))\b",
     re.I,
 )
 
@@ -49,8 +58,14 @@ def delivery_notice(sender: str, subject: str) -> str | None:
 
 
 def is_opt_out(text: str) -> bool:
-    """True when a reply reads as a "no" or a request to stop (see NO_WORDS)."""
-    return bool(NO_WORDS.search((text or "")[:200]))
+    """True for a clear "no": a request to stop anywhere, or a reply that is only a "no" (see STOP_REQUEST, NO_PHRASE)."""
+    text = (text or "")[:300].replace("’", "'")  # phones type a curly apostrophe in "don't"
+    if STOP_REQUEST.search(text):
+        return True
+    first = re.split(r"\n\s*\n", text.strip(), maxsplit=1)[0]  # the signature usually follows a blank line
+    if not NO_PHRASE.search(first):
+        return False
+    return not re.sub(r"[\W_]+", "", POLITE.sub(" ", NO_PHRASE.sub(" ", first)))
 
 
 def _token_path():

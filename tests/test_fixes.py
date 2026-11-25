@@ -86,6 +86,7 @@ def test_pitch_editor_is_read_only_after_sending(web):
     "Nahi", "Nahin ji, thank you", "nahi chahiye", "No thanks, we already have a website.",
     "Please unsubscribe me", "Remove me from your list", "Stop emailing me.", "Don't email me again",
     "Do not contact us", "Hi, please stop sending these. Thanks",
+    "Hi sir, not interested.", "No.\n\nRegards,\nDr. Rao\nSmile Dental", "Don’t email us", "Never contact me again",
 ])
 def test_opt_out_replies(reply):
     from leadscout.mailer.gmail import is_opt_out
@@ -93,12 +94,11 @@ def test_opt_out_replies(reply):
     assert is_opt_out(reply)
 
 
-# main deliberately errs towards opting out (losing a lead is cheaper than emailing someone who said no),
-# so borderline replies like "No, all good. Thanks!" or "Not interested in SEO. But a new site, yes."
-# count as opt-outs there. Only replies both rules agree on are pinned here.
 @pytest.mark.parametrize("reply", [
+    "No, all good. Thanks!", "Nope, that's perfect", "I'm not interested in ads but want a website",
+    "Not interested in SEO. But a new site, yes.",
     "No problem, please send the mockup", "Yes send it", "How much would it cost?", "No worries, call me tomorrow",
-    "Nothing to add, send the mockup", "",
+    "Nothing to add, send the mockup", "Thanks!", "",
 ])
 def test_not_opt_out_replies(reply):
     from leadscout.mailer.gmail import is_opt_out
