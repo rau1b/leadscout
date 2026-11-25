@@ -156,3 +156,34 @@ def test_config_backups_are_pruned_with_the_database_ones(tmp_path):
     (d / "config-20200101-000000.toml").write_text("old")
     (d / "config-99990101-000000.toml").write_text("new")
     assert backups.prune(d, 14) == ["config-20200101-000000.toml"]
+
+
+def _post_email_and_city(client):
+    return client.post("/settings", data=_form(**{"sender.email": "new.outreach@gmail.com", "sender.city": "Mumbai"}))
+
+
+@pytest.mark.parametrize("how", ["leadscout send", "dashboard"])
+def test_sender_email_is_locked_while_sending(web, monkeypatch, how):
+    from leadscout.web import sending
+
+    client, home = web
+    if how == "leadscout send":  # a live lease in the database, as `leadscout send` holds
+        con = db.connect()
+        con.execute("insert into meta (key, value) values ('sender_lease', ?)", (f"{db.now()}|123-456",))
+        con.commit()
+    else:
+        monkeypatch.setattr(sending, "running", lambda: True)
+
+    page = _post_email_and_city(client).text
+    assert 'id="sender.email-err"' in page and "Stop sending first" in page and "your other changes were saved" in page
+    saved = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))["sender"]
+    assert saved["email"] == "asha.outreach@gmail.com" and saved["city"] == "Mumbai"
+
+
+def test_sender_email_changes_once_sending_has_stopped(web):
+    client, home = web
+    con = db.connect()
+    con.execute("insert into meta (key, value) values ('sender_lease', '2020-01-01T10:00:00+05:30|123-456')")  # left by a closed run
+    con.commit()
+    _post_email_and_city(client)
+    assert tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))["sender"]["email"] == "new.outreach@gmail.com"

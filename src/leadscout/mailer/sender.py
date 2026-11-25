@@ -257,6 +257,15 @@ def _lease_stale_after(sc) -> timedelta:
     return timedelta(seconds=sc["max_gap_seconds"]) + timedelta(minutes=5)  # a live sender beats more often than this
 
 
+def _stale(at: str, sc) -> bool:
+    return not at or datetime.fromisoformat(at) < datetime.now(IST) - _lease_stale_after(sc)
+
+
+def lease_held(con, sc) -> bool:
+    """True while a sender run (`leadscout send` or the dashboard's) holds a live lease."""
+    return not _stale((get_meta(con, LEASE_KEY) or "").partition("|")[0], sc)
+
+
 def take_lease(con, sc, owner: str) -> bool:
     """Be the only sender. Two at once would each keep their own cap count and gap. A lease not renewed for a
     while (its sender was closed) is taken over."""
@@ -266,8 +275,7 @@ def take_lease(con, sc, owner: str) -> bool:
         return True
     old = get_meta(con, LEASE_KEY) or ""
     at, _, holder = old.partition("|")
-    stale = not at or datetime.fromisoformat(at) < datetime.now(IST) - _lease_stale_after(sc)
-    if holder != owner and not stale:
+    if holder != owner and not _stale(at, sc):
         return False
     took = con.execute("update meta set value = ? where key = ? and value = ?", (stamp, LEASE_KEY, old)).rowcount
     con.commit()

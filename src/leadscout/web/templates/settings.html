@@ -25,11 +25,12 @@
   <span class="meta">Saved to <code>config.toml</code>. Changes apply at once, even to sending already under way.</span>
 </div>
 
-{% if errors %}
+{% if errors and not partial %}
 <p class="note bad" role="alert">{{ errors|length }} {{ 'setting needs' if errors|length == 1 else 'settings need' }} fixing. Nothing was saved.</p>
 {% elif saved %}
-<p class="note" role="status">{% if saved == '0' %}Nothing had changed.{% else %}Saved. {{ saved }} {{ 'setting' if saved == '1' else 'settings' }} changed; the old file is in <code>data/backups/</code>.{% endif %}</p>
+<p class="note" role="status">{% if saved == '0' %}Nothing else had changed.{% else %}Saved. {{ saved }} {{ 'setting' if saved == '1' else 'settings' }} changed; the old file is in <code>data/backups/</code>.{% endif %}</p>
 {% endif %}
+{% if partial %}<p class="note bad" role="alert">The Gmail address wasn't changed because sending is running; your other changes were saved. Stop sending, then change it.</p>{% endif %}
 {% if problem %}<p class="note" role="status">{{ problem }}</p>{% endif %}
 {% if not has_file %}<p class="note">There's no <code>config.toml</code> yet, so these are the example values. Saving this page creates it.</p>{% endif %}
 
