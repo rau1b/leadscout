@@ -7,7 +7,8 @@ from datetime import datetime, time, timedelta
 import phonenumbers
 
 from leadscout.config import IST, data_dir
-from leadscout.db import jload, now
+from leadscout import backups
+from leadscout.db import file_of, jload, now
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -144,5 +145,6 @@ def purge_if_due(con, cfg) -> int | None:
     if get_meta(con, "last_purge") == today:
         return None
     n = purge_stale(con, cfg.retention["purge_uncontacted_after_days"])
+    backups.prune(backups.folder(file_of(con)), cfg.backups["keep_days"])
     set_meta(con, "last_purge", today)
     return n

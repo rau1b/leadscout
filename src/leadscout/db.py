@@ -47,6 +47,11 @@ def connect(path=None) -> sqlite3.Connection:
     return con
 
 
+def file_of(con) -> Path:
+    """The file this connection has open."""
+    return Path(con.execute("pragma database_list").fetchone()[2])
+
+
 def migrations() -> list[tuple[int, Path]]:
     """The numbered .sql files, in order: 0001_baseline.sql is version 1."""
     return sorted((int(p.name.split("_")[0]), p) for p in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))

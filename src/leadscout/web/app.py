@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from leadscout import config, db, searches
+from leadscout import backups, config, db, searches
 from leadscout.audit.classify import LABELS
 from leadscout.compliance import in_window, lead_is_suppressed, opt_out
 from leadscout.config import IST
@@ -26,6 +26,7 @@ async def lifespan(_app):
     from leadscout.web import sending
 
     purge_if_due(db.connect(), config.load())  # retention: drop never-contacted leads past the limit, once a day
+    backups.nightly(db.connect(), db.default_path())  # one copy a day in data/backups/, after the purge
     sending.note_cut_off_run(db.connect())
     searches.start_worker()  # runs area searches queued from the Find leads page
     yield

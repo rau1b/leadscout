@@ -210,6 +210,15 @@ def purge():
 
 
 @app.command()
+def backup():
+    """Copy the database to data/backups/ now. Copies older than [backups] keep_days are deleted."""
+    from leadscout import backups
+
+    _, con = _ctx()
+    typer.echo(f"Saved {backups.backup_now(con, db.file_of(con), 'manual')}.")
+
+
+@app.command()
 def export(path: str = typer.Argument("leads.csv"), min_score: int = typer.Option(0)):
     """Export leads to CSV (opens in Google Sheets or Excel). Opted-out, bounced and hidden leads are left out."""
     from leadscout.compliance import is_suppressed
