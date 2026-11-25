@@ -18,11 +18,10 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 
 from leadscout import db
 from leadscout.compliance import is_suppressed
-from leadscout.config import data_dir
 
 EXPIRES_AFTER_DAYS = 30
 
-# Matched against category + category_path (Overture's taxonomy, e.g. "dentist", "health_and_medical > dentist").
+# Matched against basic_category, then category + category_path (Overture's taxonomy, e.g. "dentist", "health_and_medical > dentist").
 # Clinic is checked first, so "medical_spa" gets the clinic page.
 VERTICALS = {
     "clinic": ("dentist", "dental", "clinic", "doctor", "physio", "dermatolog", "hospital", "medical", "orthodont", "optometr", "eye_care", "health"),
@@ -52,15 +51,25 @@ class Demo:
     expires_at: str
 
 
-def folder() -> Path:
-    return data_dir() / "demos"
+def folder(con) -> Path | None:
+    """data/demos/ beside this database file, so pages always belong to the database that lists them
+    (a test database never touches the real pages). None for an in-memory database."""
+    f = db.file_of(con)
+    return f.parent / "demos" if str(f) else None
+
+
+def _basic(row) -> str | None:
+    """Overture's plain label (contract C3). The column arrives with Jason's Phase 1 Step 1; until then it's None."""
+    return (row["basic_category"] or None) if "basic_category" in row.keys() else None
 
 
 def pick_template(row) -> str:
-    cat = f"{row['category'] or ''} {row['category_path'] or ''}".lower()
-    for name, words in VERTICALS.items():
-        if any(w in cat for w in words):
-            return name
+    """basic_category first (C3), then category and category_path."""
+    for cat in (_basic(row), f"{row['category'] or ''} {row['category_path'] or ''}"):
+        cat = (cat or "").lower()
+        for name, words in VERTICALS.items():
+            if any(w in cat for w in words):
+                return name
     return "shop"
 
 
@@ -107,7 +116,7 @@ def facts(row) -> dict:
         maps = None
     return {
         "name": row["name"],
-        "what": _humanize(row["category"], row["category_path"]),
+        "what": _humanize(_basic(row) or row["category"], row["category_path"]),
         "area": area,
         "address": address,
         "hours": (row["hours"] or None) if "hours" in keys else None,  # no hours column yet; shown once a source fills one
@@ -161,11 +170,14 @@ def build(con, business_id: str, sender: dict, actor: str = "cli") -> Demo:
     if is_suppressed(con, *contact_values(con, business_id)) or (status and status["status"] == "opted_out"):
         raise Refused(f"{row['name']} is on the opt-out list. No demo is built for them.")
 
+    root = folder(con)
+    if root is None:
+        raise Refused("Demo pages need a database file, not an in-memory one.")
     template, html = render(row, sender)
     slug = secrets.token_urlsafe(16)
-    while con.execute("select 1 from demos where slug = ?", (slug,)).fetchone() or (folder() / slug).exists():
+    while con.execute("select 1 from demos where slug = ?", (slug,)).fetchone() or (root / slug).exists():
         slug = secrets.token_urlsafe(16)
-    path = folder() / slug / "index.html"
+    path = root / slug / "index.html"
     path.parent.mkdir(parents=True)
     path.write_text(html, encoding="utf-8")
 
@@ -185,14 +197,15 @@ def build(con, business_id: str, sender: dict, actor: str = "cli") -> Demo:
         shutil.rmtree(path.parent, ignore_errors=True)
         raise
     for s in old:
-        shutil.rmtree(folder() / s, ignore_errors=True)
+        shutil.rmtree(root / s, ignore_errors=True)
     return Demo(slug, template, path, built_at, expires_at)
 
 
 def remove_orphans(con) -> int:
-    """Delete demo folders whose row is gone (the business was forgotten or purged), so its details don't linger on disk."""
-    root = folder()
-    if not root.exists():
+    """Delete demo folders whose row is gone (the business was forgotten or purged), so its details don't linger on disk.
+    compliance.forget() calls this (contract C8)."""
+    root = folder(con)
+    if root is None or not root.exists():
         return 0
     live = {r[0] for r in con.execute("select slug from demos")}
     gone = [d for d in root.iterdir() if d.is_dir() and d.name not in live]

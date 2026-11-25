@@ -97,6 +97,9 @@ def forget(con, value: str) -> tuple[int, list[str]]:
     """
     ids = _forget_in(con, value)
     _forget_in_pitch_files(ids)
+    from leadscout import demos  # rau1b's one agreed call (contract C8): their demo rows cascaded, now remove the pages
+
+    demos.remove_orphans(con)
     return len(ids), _forget_in_backups(backups.folder(file_of(con)), value)
 
 

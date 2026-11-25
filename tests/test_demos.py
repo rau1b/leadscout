@@ -53,7 +53,7 @@ def test_banner_noindex_and_no_scripts_or_images(con):
     assert "position:fixed" in soup.style.string.replace(" ", "")
     assert soup.find("meta", attrs={"name": "robots"})["content"] == "noindex"
     assert not soup.find_all(["script", "img", "picture", "iframe", "link"])  # no JS, no photos or logos, CSS inline
-    assert d.path == demos.folder() / d.slug / "index.html"
+    assert d.path == demos.folder(con) / d.slug / "index.html"
 
 
 def test_only_facts_from_the_row(con):
@@ -99,6 +99,21 @@ def test_template_by_category(con):
     assert [demos.build(con, i, SENDER).template for i in ("s", "c", "g")] == ["salon", "clinic", "shop"]
 
 
+def test_basic_category_wins_when_the_column_exists(con):
+    """Contract C3: Jason's migration adds businesses.basic_category; until then category and category_path are used."""
+    import sqlite3
+
+    m = sqlite3.connect(":memory:")
+    m.row_factory = sqlite3.Row
+    row = m.execute(
+        """select 'Lotus' as name, 'shopping' as category, null as category_path, 'beauty_salon' as basic_category,
+                  null as address, null as locality, null as city, null as area, null as postcode,
+                  null as lat, null as lon, null as phone, null as phone_type"""
+    ).fetchone()
+    assert demos.pick_template(row) == "salon"
+    assert demos.facts(row)["what"] == "Beauty salon"
+
+
 def test_row_event_and_expiry(con):
     add(con, **FULL)
     d = demos.build(con, "dent1", SENDER)
@@ -124,7 +139,7 @@ def test_suppressed_business_is_refused(con, how):
     with pytest.raises(demos.Refused):
         demos.build(con, "dent1", SENDER)
     assert con.execute("select count(*) from demos").fetchone()[0] == 0
-    assert not demos.folder().exists() or not any(demos.folder().iterdir())
+    assert not demos.folder(con).exists() or not any(demos.folder(con).iterdir())
 
 
 def test_slugs_are_unique_and_unguessable(con):
@@ -144,8 +159,17 @@ def test_rebuild_replaces_old_demo_and_forgotten_pages_are_removed(con):
 
     forget(con, "smile@clinic.in")
     assert con.execute("select count(*) from demos").fetchone()[0] == 0  # cascade
-    assert demos.remove_orphans(con) == 1
-    assert not second.path.parent.exists()
+    assert not second.path.parent.exists()  # forget() called remove_orphans (contract C8)
+
+
+def test_pages_belong_to_their_database(con, tmp_path):
+    """A second database (a test, a restored copy) never deletes the first one's pages."""
+    add(con, **FULL)
+    d = demos.build(con, "dent1", SENDER)
+    (tmp_path / "elsewhere").mkdir()
+    other = db.connect(tmp_path / "elsewhere" / "other.db")  # empty: every page of the first database looks orphaned to it
+    assert demos.remove_orphans(other) == 0
+    assert d.path.exists()
 
 
 def test_cli(con, tmp_path):
