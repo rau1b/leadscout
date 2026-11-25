@@ -402,7 +402,7 @@ LOCAL = {"Origin": "http://127.0.0.1:8000"}
 @pytest.mark.parametrize("back,goes_to", [
     ("/leads?status=new", "/leads?status=new"),
     ("//evil.com", "/leads/b1"),
-    ("/\evil.com", "/leads/b1"),
+    ("/\\evil.com", "/leads/b1"),
     ("https://evil.com", "/leads/b1"),
     ("", "/leads/b1"),
 ])
@@ -559,8 +559,8 @@ def test_broken_certificate_reason_and_pitch(cfg):
 # ---- 11. stop() only kills our own dashboard -----------------------------------------------
 
 @pytest.mark.parametrize("cmdline,killed", [
-    ('"C:\leadscout\.venv\Scripts\pythonw.exe" -m uvicorn leadscout.web.app:app --host 127.0.0.1 --port 8000', True),
-    ("C:\Program Files\Mozilla Firefox\firefox.exe", False),  # PID reused after a reboot
+    (r'"C:\leadscout\.venv\Scripts\pythonw.exe" -m uvicorn leadscout.web.app:app --host 127.0.0.1 --port 8000', True),
+    (r"C:\Program Files\Mozilla Firefox\firefox.exe", False),  # PID reused after a reboot
     ("", False),  # no such process any more
 ])
 def test_stop_only_kills_our_dashboard(tmp_path, monkeypatch, cmdline, killed):

@@ -750,6 +750,15 @@ def test_cut_off_send_found_in_gmail_is_recorded(con, cfg):
     assert sender.stuck_claims(con) == [] and sender.next_item(con, cfg) is None
 
 
+def test_failed_send_that_gmail_took_is_recorded(con, cfg):
+    # The sender marks a lead send_failed when Gmail errors, but a 5xx can come after Gmail accepted it.
+    _approved_first(con)
+    con.execute("update leads set status = 'send_failed'")
+    _cut_off_claim(con)
+    assert sender.resolve_stuck(con, SentFolderGmail(found=True)) == {"recorded": 1, "released": 0}
+    assert con.execute("select status from leads").fetchone()[0] == "contacted"
+
+
 def test_cut_off_send_missing_from_gmail_goes_back_in_queue(con, cfg):
     _approved_first(con)
     _cut_off_claim(con)
