@@ -316,5 +316,11 @@ def serve(port: int = 8000):
     uvicorn.run("leadscout.web.app:app", host="127.0.0.1", port=port)
 
 
+# Show & close commands live in their own modules (docs/TRACKS.md).
+from leadscout.demos.cli import demo  # noqa: E402
+
+app.command()(demo)
+
+
 if __name__ == "__main__":
     app()

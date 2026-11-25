@@ -4,14 +4,14 @@ What one track writes and the other reads. The owner may add fields. Renaming or
 
 ## `demos` table (owned by rau1b, Show & close)
 
-Planned; not in the schema yet. It arrives as a migration from the Show & close track.
+Added by migration `0003_demos.sql`. One row per business: rebuilding a demo replaces the old row and page.
 
 | Column | Meaning |
 |---|---|
 | `business_id` | `references businesses(id) on delete cascade`, so `forget` and the retention purge remove demos too |
 | `slug` | the demo's path on the preview host |
 | `template` | which demo template was used |
-| `url` | the full preview link put in a pitch |
+| `url` | the full preview link put in a pitch; null until the page is on the preview host |
 | `built_at` | when it was built (ISO time, IST) |
 | `expires_at` | when the preview host takes it down |
 | `first_viewed_at` | first time the business opened it, or null |
@@ -49,4 +49,4 @@ Written with `db.log_event(con, type, business_id=None, actor="system", **data)`
 | Show & close (rau1b) | `demo_built`, `demo_viewed`, `demo_expired`, `proposal_sent`, `invoice_sent`, `invoice_paid` |
 | Shared | `settings_changed` (the Settings page; data: the changed key names only) |
 
-Only `settings_changed` is written today. To add a type, add it to this table in the same PR.
+Written today: `settings_changed` and `demo_built` (data: `template`). To add a type, add it to this table in the same PR.
