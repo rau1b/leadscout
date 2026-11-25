@@ -87,7 +87,8 @@ def problem(f: dict) -> tuple[str, str]:
     if f.get("viewport") == 0:
         issues.append("it isn't built for mobile screens, so phone visitors have to pinch and zoom")
     if f.get("fetch_error") == "bad_certificate":
-        issues.insert(0, "its security certificate is broken, so browsers show a security warning before the page opens")
+        # Not "browsers show a warning": Chrome often works around a missing intermediate certificate, which our check fails.
+        issues.insert(0, "its security certificate has a problem, so some browsers and phones may warn visitors")
     elif not f.get("https"):
         issues.append("it has no HTTPS, so browsers mark it \"Not secure\"")
     if is_outdated(f.get("copyright_year")):

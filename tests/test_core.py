@@ -8,7 +8,7 @@ from leadscout.audit.site import check_html
 from leadscout.compliance import in_window, is_suppressed, normalize, suppress
 from leadscout.config import IST
 from leadscout.mailer import sender
-from leadscout.mailer.gmail import NO_WORDS, is_opt_out
+from leadscout.mailer.gmail import is_opt_out
 from leadscout.pitch import templates
 from leadscout.sources.common import phone_info, pick_website
 
@@ -864,9 +864,10 @@ def test_pitch_may_quote_template_facts_and_phone_formats(con, cfg):
 
 
 def test_remove_our_old_address_is_not_a_no():
-    assert not NO_WORDS.search("Please remove our old address from the site and send a quote.")
-    assert NO_WORDS.search("Please remove me from your list.")
-    assert NO_WORDS.search("remove my email please")
+    assert not is_opt_out("Please remove our old address from the site and send a quote.")
+    assert is_opt_out("Please remove me from your list.")
+    assert is_opt_out("remove my email please")
+    assert is_opt_out("Thanks for the mockup. Please remove my number from your list though.")  # a stop request counts anywhere
 
 
 def test_unsubscribe_check_only_reads_new_mail(con, cfg):

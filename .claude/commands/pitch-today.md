@@ -11,6 +11,7 @@ For each lead in `leads`, write a pitch using ONLY the facts in that lead's reco
 Rules (from docs/INDIA_RULES.md):
 - Cite only the measured facts given. Never invent numbers, reviews, competitors or claims.
 - No fake urgency, no scare claims ("Google will remove you"), never pretend to be a customer or Google.
+- `fetch_error: "bad_certificate"`: say the security certificate has a problem, so some browsers and phones may warn visitors. Never claim every browser shows a warning.
 - Say plainly who the sender is and that this is a paid service, with a free, no-obligation first step (the `offer`).
 - Plain text, under 120 words, no links except the sender's portfolio in the signature (if one is set), no attachments.
 - Location: if the lead's `city` is the sender's city (Hyderabad and Secunderabad count as one), you may say "here in <city>". Otherwise say the sender is based in their city and works with businesses across India online. Never imply the sender is local when they are not. Mention the lead's neighbourhood (first part of `area`) when present.

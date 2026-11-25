@@ -41,7 +41,7 @@ def site_need(a) -> tuple[int, list[str]]:
         why.append(f"Main content takes {a['lcp_s']}s to load on mobile")
     if a["fetch_error"] == "bad_certificate":
         pts += 20
-        why.append("Broken SSL certificate (browsers show a security warning)")
+        why.append("Security certificate has a problem (some browsers and phones may warn visitors)")
     elif not a["https"]:
         pts += 15
         why.append("No HTTPS (browsers show 'Not secure')")

@@ -86,6 +86,7 @@ def test_pitch_editor_is_read_only_after_sending(web):
     "Nahi", "Nahin ji, thank you", "nahi chahiye", "No thanks, we already have a website.",
     "Please unsubscribe me", "Remove me from your list", "Stop emailing me.", "Don't email me again",
     "Do not contact us", "Hi, please stop sending these. Thanks",
+    "Hi sir, not interested.", "No.\n\nRegards,\nDr. Rao\nSmile Dental", "Don’t email us", "Never contact me again",
 ])
 def test_opt_out_replies(reply):
     from leadscout.mailer.gmail import is_opt_out
@@ -93,12 +94,11 @@ def test_opt_out_replies(reply):
     assert is_opt_out(reply)
 
 
-# main deliberately errs towards opting out (losing a lead is cheaper than emailing someone who said no),
-# so borderline replies like "No, all good. Thanks!" or "Not interested in SEO. But a new site, yes."
-# count as opt-outs there. Only replies both rules agree on are pinned here.
 @pytest.mark.parametrize("reply", [
+    "No, all good. Thanks!", "Nope, that's perfect", "I'm not interested in ads but want a website",
+    "Not interested in SEO. But a new site, yes.",
     "No problem, please send the mockup", "Yes send it", "How much would it cost?", "No worries, call me tomorrow",
-    "Nothing to add, send the mockup", "",
+    "Nothing to add, send the mockup", "Thanks!", "",
 ])
 def test_not_opt_out_replies(reply):
     from leadscout.mailer.gmail import is_opt_out
@@ -551,9 +551,18 @@ def test_broken_certificate_reason_and_pitch(cfg):
     a = {"site_class": "real", "fetch_error": "bad_certificate", "https": 0, "perf_score": 80, "lcp_s": 2.0,
          "viewport": 1, "copyright_year": 2026, "has_whatsapp": 1, "has_tel": 1}
     pts, why = site_need(a)
-    assert pts > 0 and any("security warning" in w for w in why) and not any("No HTTPS" in w for w in why)
-    body = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)["body"]
-    assert "browsers show a security warning" in body and "Not secure" not in body
+    assert pts > 0 and "Security certificate has a problem (some browsers and phones may warn visitors)" in why
+    assert not any("No HTTPS" in w for w in why)
+    pitch = templates.render({**a, "name": "Smile", "category": "dentist", "website": "https://clinic.in"}, cfg)
+    assert "its security certificate has a problem, so some browsers and phones may warn visitors" in pitch["body"]
+    assert "Not secure" not in pitch["body"]
+    # Chrome often works around the commonest certificate fault, so never claim every browser warns.
+    from leadscout.web.app import headline
+
+    head = headline({**a, "website": "https://clinic.in"})
+    assert head == "Certificate problem, some browsers may warn"
+    for text in [*why, head, pitch["subject"], pitch["body"], pitch["whatsapp"]]:
+        assert "browsers show" not in text.lower() and "security warning" not in text.lower()
 
 
 # ---- 11. stop() only kills our own dashboard -----------------------------------------------

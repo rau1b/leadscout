@@ -127,7 +127,7 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
         return result
     result.update(final_url=str(resp.url), status_code=resp.status_code, https=int(resp.url.scheme == "https"))
     if err == "bad_certificate":
-        result.update(https=0, fetch_error=err)  # browsers show a security warning, so it's not working HTTPS
+        result.update(https=0, fetch_error=err)  # some browsers and phones warn, so it's not working HTTPS
     if resp.status_code in (401, 403, 429, 503):
         # Bot protection (e.g. Cloudflare): the site exists, we just can't inspect it. PageSpeed still can.
         result["site_class"] = "real"

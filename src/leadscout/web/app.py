@@ -140,7 +140,7 @@ def headline(r) -> str:
     if r["site_class"] != "real":
         return LABELS.get(r["site_class"], r["site_class"])
     if r["fetch_error"] == "bad_certificate":
-        return "Security warning in browsers"
+        return "Certificate problem, some browsers may warn"
     if r["lcp_s"] and r["lcp_s"] > 4:
         return f"Loads in {r['lcp_s']}s on mobile"
     if r["perf_score"] is not None and r["perf_score"] < 50:
