@@ -84,7 +84,7 @@ Copies older than `[backups] keep_days` (14 by default) are deleted after each b
 2. Stop the dashboard: `leadscout stop` for the desktop icon, or Ctrl+C in the terminal running `leadscout serve`. Restore refuses to run while a dashboard answers.
 3. `leadscout restore leadscout-20261124-093000-nightly.db` (a name from that folder, or a full path).
 
-Restore first saves the current database as `...-pre-restore.db`, so you can undo it by restoring that file. An older-version backup is migrated. Then the opt-out list is re-applied: the hashed entries from the current database and the backup are merged, and any business whose email or phone is on it is deleted (bounces excepted), so a restore never brings back someone who opted out or asked to be forgotten.
+Restore first saves the current database as `...-pre-restore.db`, so you can undo it by restoring that file. An older-version backup is migrated. Then the opt-out list is re-applied as the live rules do: the hashed entries from the current database and the backup are merged (keeping the stronger reason), businesses that asked to be forgotten are deleted, opted-out leads are marked opted out with their history kept (a won lead is left for you to decide), and bounced addresses are left alone. So a restore never brings back someone who opted out or asked to be forgotten.
 
 ## Layout
 
