@@ -43,6 +43,52 @@ def nightly(con, path: Path) -> Path | None:
     return backup_now(con, path, "nightly")
 
 
+def restore(db_path: Path, src: Path) -> dict:
+    """Replace the live database with the backup `src`. The dashboard must not be running.
+
+    Saves a "pre-restore" copy first, migrates the restored data if it's an older version, then re-applies the
+    suppression list from both, so a restore never brings back someone who was forgotten or opted out since.
+    """
+    from leadscout import db
+    from leadscout.compliance import _hash, contacts
+
+    db_path, src = Path(db_path).resolve(), Path(src).resolve()
+    # Read the backup first: the pre-restore copy prunes expired backups, and that could include `src`.
+    mem = sqlite3.connect(":memory:")
+    s = sqlite3.connect(f"{src.as_uri()}?mode=rw", uri=True)  # rw, not ro: an older copy may be in WAL mode; never creates a file
+    try:
+        s.backup(mem)
+    finally:
+        s.close()
+    if not mem.execute("select 1 from sqlite_master where type = 'table' and name = 'businesses'").fetchone():
+        raise ValueError("it isn't a LeadScout database")
+    old_version = mem.execute("pragma user_version").fetchone()[0]
+
+    con = db.connect(db_path)
+    pre = backup_now(con, db_path, "pre-restore")
+    mem.backup(con)
+    mem.close()
+    con.close()
+    db._ready.discard(str(db_path))
+    con = db.connect(db_path)  # runs any migrations the restored data is missing
+
+    p = sqlite3.connect(pre)
+    con.executemany("insert or ignore into suppression (value_hash, reason, added_at) values (?, ?, ?)",
+                    p.execute("select value_hash, reason, added_at from suppression").fetchall())
+    p.close()
+    # A bounce isn't a request from the person (see compliance.is_opted_out), so bounced leads stay.
+    blocked = {r[0] for r in con.execute("select value_hash from suppression where reason != 'bounced'")}
+    removed = [bid for bid, held in contacts(con) if any(_hash(v) in blocked for v in held)]
+    for bid in removed:
+        con.execute("delete from businesses where id = ?", (bid,))
+    con.commit()
+    version = con.execute("pragma user_version").fetchone()[0]
+    con.close()
+    m = STAMP.search(src.name)
+    taken = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S") if m else datetime.fromtimestamp(src.stat().st_mtime)
+    return {"file": src.name, "taken": taken, "from_version": old_version, "version": version, "removed": len(removed), "pre_restore": pre}
+
+
 def prune(d: Path, keep_days: int = 14) -> list[str]:
     """Delete backups older than keep_days. Age comes from the name, not the file time: forget rewrites old backups."""
     cutoff = datetime.now(IST).replace(tzinfo=None) - timedelta(days=keep_days)

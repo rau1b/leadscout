@@ -41,6 +41,7 @@ leadscout optout <email|phone>   # never contact again
 leadscout forget <email|phone>   # delete everything, keep hashed opt-out
 leadscout purge                  # delete never-contacted data older than 90 days
 leadscout backup                 # copy the database to data/backups/ now
+leadscout restore <backup-file>  # put a backup back (dashboard stopped)
 leadscout export leads.csv
 ```
 
@@ -71,10 +72,19 @@ A database from before numbered migrations (version 0) gets the old `_migrate()`
 `backups.py` copies the database into `data/backups/` with sqlite's backup API (a plain file copy can miss recent writes while WAL is on):
 
 - `leadscout-<YYYYmmdd-HHMMSS>-v<old version>.db` before every migration;
-- `...-nightly.db` once per IST day, made when the dashboard starts;
-- `...-manual.db` whenever you run `leadscout backup`.
+- `...-nightly.db` once per IST day while the dashboard runs (it checks at start and every hour);
+- `...-manual.db` whenever you run `leadscout backup`;
+- `...-pre-restore.db` before every restore.
 
-Copies older than `[backups] keep_days` (14 by default) are deleted after each backup and by the daily purge; the age comes from the timestamp in the name. `leadscout forget` also removes the person from every backup and adds the hashed opt-out entry to it; any backup it can't open is named in its message. To restore, stop the dashboard and copy a backup over `data/leadscout.db`.
+Copies older than `[backups] keep_days` (14 by default) are deleted after each backup and by the daily purge; the age comes from the timestamp in the name. `leadscout forget` also removes the person from every backup and adds the hashed opt-out entry to it; any backup it can't open is named in its message. Deleted rows are overwritten in the live database too (`secure_delete`).
+
+### Restoring a backup
+
+1. List the backups: open `dataackups` in File Explorer, or run `dir dataackups` (PowerShell: `ls data/backups`). The name says when each was taken.
+2. Stop the dashboard: `leadscout stop` for the desktop icon, or Ctrl+C in the terminal running `leadscout serve`. Restore refuses to run while a dashboard answers.
+3. `leadscout restore leadscout-20261124-093000-nightly.db` (a name from that folder, or a full path).
+
+Restore first saves the current database as `...-pre-restore.db`, so you can undo it by restoring that file. An older-version backup is migrated. Then the opt-out list is re-applied: the hashed entries from the current database and the backup are merged, and any business whose email or phone is on it is deleted (bounces excepted), so a restore never brings back someone who opted out or asked to be forgotten.
 
 ## Layout
 

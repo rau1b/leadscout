@@ -163,3 +163,81 @@ def test_hourly_task_stops_cleanly_on_shutdown(tmp_path, monkeypatch):
         return [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
 
     assert asyncio.run(run()) == []
+
+
+def _rows(con, sql):
+    return [tuple(r) for r in con.execute(sql)]
+
+
+def test_restore_brings_back_the_backup(tmp_path, monkeypatch):
+    con = _people(tmp_path, monkeypatch)
+    saved = backups.backup_now(con, db.default_path(), "manual")
+    before = _rows(con, "select * from businesses order by id"), _rows(con, "select * from leads order by business_id")
+    con.execute("insert into businesses (id, source, name, fetched_at) values ('c', 't', 'New', '2026-11-21')")
+    con.execute("update leads set score = 99")
+    con.commit()
+    con.close()
+
+    r = backups.restore(db.default_path(), saved)
+    con = db.connect()
+    assert (_rows(con, "select * from businesses order by id"), _rows(con, "select * from leads order by business_id")) == before
+    assert r["removed"] == 0 and r["file"] == saved.name
+    assert "c" in {x[0] for x in _rows(sqlite3.connect(r["pre_restore"]), "select id from businesses")}  # the state before is kept
+
+
+def test_restore_never_brings_back_someone_forgotten_or_opted_out_since(tmp_path, monkeypatch):
+    from leadscout.compliance import _hash, forget, opt_out
+
+    con = _people(tmp_path, monkeypatch)
+    con.execute("insert into businesses (id, source, name, phone, fetched_at) values ('c', 't', 'Shop c', '9876543210', '2026-11-20')")
+    con.commit()
+    # A copy kept outside data/backups/, so forget can't clean it.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    saved = backups.backup_now(con, db.default_path(), "manual").replace(elsewhere / "leadscout-20261120-100000-manual.db")
+    forget(con, "gone@shop.in")
+    opt_out(con, "+91 98765 43210", "manual")
+    con.close()
+
+    r = backups.restore(db.default_path(), saved)
+    con = db.connect()
+    assert _rows(con, "select id from businesses") == [("b",)]
+    assert r["removed"] == 2
+    for value in ("gone@shop.in", "+919876543210"):
+        assert con.execute("select 1 from suppression where value_hash = ?", (_hash(value),)).fetchone()
+
+
+def test_restore_migrates_an_older_backup(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    db.connect().close()
+    old = tmp_path / "old.db"
+    o = sqlite3.connect(old)
+    o.executescript(db.migrations()[0][1].read_text(encoding="utf-8"))  # the old schema: the baseline without city
+    o.executescript("""
+        alter table businesses drop column city;
+        insert into businesses (id, source, name, area, fetched_at) values ('x', 'overture', 'Old Dental', 'Kukatpally, Hyderabad', '2026-11-01');
+    """)
+    o.close()
+
+    r = backups.restore(db.default_path(), old)
+    con = db.connect()
+    assert (r["from_version"], r["version"]) == (0, db.migrations()[-1][0])
+    assert con.execute("pragma user_version").fetchone()[0] == db.migrations()[-1][0]
+    assert _rows(con, "select name, city from businesses") == [("Old Dental", "Hyderabad")]
+
+
+def test_restore_refuses_while_the_dashboard_runs(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from leadscout import launch
+    from leadscout.cli import app
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))
+    monkeypatch.setattr(launch, "dashboard_pid", lambda: 4242)
+    out = CliRunner().invoke(app, ["restore", "anything.db"])
+    assert out.exit_code == 1 and "leadscout stop" in out.output
+
+    monkeypatch.setattr(launch, "dashboard_pid", lambda: None)
+    monkeypatch.setattr(launch, "running", lambda: True)  # a terminal `leadscout serve`
+    out = CliRunner().invoke(app, ["restore", "anything.db"])
+    assert out.exit_code == 1 and "Ctrl+C" in out.output

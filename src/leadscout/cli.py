@@ -224,6 +224,38 @@ def backup():
 
 
 @app.command()
+def restore(backup_file: str = typer.Argument(..., help="A file in data/backups/ (name or path).")):
+    """Replace the database with a backup. Saves a copy of the current one first; never brings back opted-out people."""
+    import sqlite3
+
+    from leadscout import backups, launch
+
+    if launch.dashboard_pid():
+        typer.echo("The dashboard is running. Stop it with `leadscout stop`, then restore.", err=True)
+        raise typer.Exit(1)
+    if launch.running():
+        typer.echo("A dashboard is answering on http://127.0.0.1:8000. Press Ctrl+C in the terminal running "
+                   "`leadscout serve`, then restore.", err=True)
+        raise typer.Exit(1)
+    path = Path(backup_file)
+    if not path.exists():
+        path = backups.folder(db.default_path()) / backup_file
+    if not path.exists():
+        typer.echo(f"No such backup: {backup_file}. The backups are in {backups.folder(db.default_path())}.", err=True)
+        raise typer.Exit(1)
+    try:
+        r = backups.restore(db.default_path(), path)
+    except (sqlite3.Error, ValueError) as e:
+        typer.echo(f"Couldn't restore {path.name}: {e}. If a pre-restore copy was made, it's the newest file in data/backups/.", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(f"Restored {r['file']} (taken {r['taken']:%d %b %Y %H:%M}).")
+    if r["from_version"] < r["version"]:
+        typer.echo(f"Upgraded it from database version {r['from_version']} to {r['version']}.")
+    typer.echo(f"Removed {r['removed']} business(es) on the opt-out list (opted out or asked to be forgotten).")
+    typer.echo(f"Your database as it was before the restore is saved as {r['pre_restore'].name}.")
+
+
+@app.command()
 def export(path: str = typer.Argument("leads.csv"), min_score: int = typer.Option(0)):
     """Export leads to CSV (opens in Google Sheets or Excel). Opted-out, bounced and hidden leads are left out."""
     from leadscout.compliance import is_suppressed
