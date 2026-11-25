@@ -38,8 +38,13 @@ _started = False
 _lock = threading.Lock()
 
 
-def queue_search(con, city: str, neighbourhood: str, type_keys: list[str], extra: str = "", place_id: int | None = None) -> int:
+def queue_search(con, city: str, neighbourhood: str, type_keys: list[str], extra: str = "", place_id: int | None = None,
+                 country: str = "IN") -> int:
     from leadscout import places
+    from leadscout.regions import country_of
+    from leadscout.sources import geo
+
+    country = country_of(country)
 
     terms = [BUSINESS_TYPES[k][1] for k in type_keys if k in BUSINESS_TYPES]
     if extra.strip():
@@ -49,8 +54,11 @@ def queue_search(con, city: str, neighbourhood: str, type_keys: list[str], extra
     city, neighbourhood = city.strip(), neighbourhood.strip()
     if not city:
         raise ValueError("Enter a city.")
-    # The exact place picked from the suggestions; typed text falls back to the biggest exact-name match.
-    place = places.get(place_id) if place_id is not None else places.best_match(city)
+    if country == "US":
+        place = {**geo.locate_us_city(city), "population": None}  # no offline list for the US: one map lookup
+    else:
+        # The exact place picked from the suggestions; typed text falls back to the biggest exact-name match.
+        place = places.get(place_id) if place_id is not None else places.best_match(city)
     if not place:
         raise ValueError(f"Couldn't find '{city}' in the list of Indian places. Start typing and pick it from the suggestions.")
     label = f"{neighbourhood}, {place['name']}" if neighbourhood else place["name"]
@@ -77,10 +85,11 @@ def queue_search(con, city: str, neighbourhood: str, type_keys: list[str], extra
         _wake.set()
         return same["id"]
     cur = con.execute(
-        """insert into searches (city, neighbourhood, label, categories, status, message, created_at, lat, lon, state, population, resolved)
-           values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)""",
+        """insert into searches (city, neighbourhood, label, categories, status, message, created_at, lat, lon, state, population,
+                                 resolved, country)
+           values (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (place["name"], neighbourhood or None, label, json.dumps({"terms": ",".join(terms), "names": names}),
-         "Waiting to start", now(), place["lat"], place["lon"], place["state"], place["population"], place["label"]),
+         "Waiting to start", now(), place["lat"], place["lon"], place["state"], place["population"], place["label"], country),
     )
     con.commit()
     _wake.set()
@@ -103,8 +112,13 @@ def area_box(s):
         box = geo.area_bbox(f"{query}, India", max_span_deg=0.06 if s["neighbourhood"] else 0.12)
         time.sleep(1)  # Nominatim fair use
         return box
+    us = s["country"] == "US"
     if not s["neighbourhood"]:
-        return geo.bbox_around(s["lat"], s["lon"], places.span_for(s["population"] or 0))
+        return geo.bbox_around(s["lat"], s["lon"], 0.12 if us else places.span_for(s["population"] or 0))
+    if us:
+        box = geo.neighbourhood_bbox(s["neighbourhood"], s["city"], s["lat"], s["lon"], country="US")
+        time.sleep(1)  # Nominatim fair use
+        return box
     # A neighbourhood: first look in the offline list, near the chosen city only.
     for p in places.search(s["neighbourhood"], limit=20):
         if abs(p["lat"] - s["lat"]) < 0.35 and abs(p["lon"] - s["lon"]) < 0.35:
@@ -125,7 +139,7 @@ def _run(con, s) -> None:
     box = area_box(s)
     _update(con, sid, message="Downloading businesses from Overture Maps")
     terms = json.loads(s["categories"])["terms"].split(",")
-    places, stored = overture.ingest(con, box, terms, s["label"], city=s["city"])
+    places, stored = overture.ingest(con, box, terms, s["label"], city=s["city"], country=s["country"] or "IN")
     _update(con, sid, places=places, stored=stored, message=f"Checking {stored} websites")
     done = {"n": 0}
 

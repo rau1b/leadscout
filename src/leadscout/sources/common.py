@@ -41,11 +41,11 @@ def pick_website(urls: list[str]) -> str | None:
     return (own or urls or [None])[0]
 
 
-def phone_info(raw: str | None) -> tuple[str | None, str | None]:
+def phone_info(raw: str | None, country: str = "IN") -> tuple[str | None, str | None]:
     if not raw:
         return None, None
     try:
-        num = phonenumbers.parse(raw, "IN")
+        num = phonenumbers.parse(raw, country)
     except phonenumbers.NumberParseException:
         return None, None
     if not phonenumbers.is_valid_number(num):
@@ -60,12 +60,13 @@ def phone_info(raw: str | None) -> tuple[str | None, str | None]:
 
 
 def upsert_business(con, b: dict) -> None:
-    phone, phone_type = phone_info(b.get("phone"))
+    country = b.get("country") or "IN"
+    phone, phone_type = phone_info(b.get("phone"), country)
     con.execute(
         """insert into businesses (id, source, name, category, category_path, address, locality, postcode,
-               lat, lon, phone, phone_type, website, emails, socials, confidence, brand, area, city, fetched_at)
+               lat, lon, phone, phone_type, website, emails, socials, confidence, brand, area, city, fetched_at, country)
            values (:id, :source, :name, :category, :category_path, :address, :locality, :postcode,
-               :lat, :lon, :phone, :phone_type, :website, :emails, :socials, :confidence, :brand, :area, :city, :fetched_at)
+               :lat, :lon, :phone, :phone_type, :website, :emails, :socials, :confidence, :brand, :area, :city, :fetched_at, :country)
            on conflict(id) do update set
                name = excluded.name, category = excluded.category, category_path = excluded.category_path,
                address = excluded.address, locality = excluded.locality, postcode = excluded.postcode,
@@ -93,5 +94,6 @@ def upsert_business(con, b: dict) -> None:
             "area": b.get("area"),
             "city": b.get("city") or ((b.get("area") or "").split(",")[-1].strip() or None),
             "fetched_at": now(),
+            "country": country,
         },
     )

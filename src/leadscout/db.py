@@ -28,7 +28,8 @@ create table if not exists businesses (
     brand text,
     area text,
     city text,
-    fetched_at text not null
+    fetched_at text not null,
+    country text not null default 'IN'   -- 'IN' or 'US': picks the phone format, sending clock and email rules
 );
 create table if not exists searches (
     id integer primary key autoincrement,
@@ -46,7 +47,8 @@ create table if not exists searches (
     lon real,
     state text,
     population integer,
-    resolved text
+    resolved text,
+    country text not null default 'IN'
 );
 create table if not exists audits (
     business_id text primary key references businesses(id) on delete cascade,
@@ -156,6 +158,8 @@ def connect(path=None) -> sqlite3.Connection:
 def _migrate(con) -> None:
     """Bring databases created by older versions up to date."""
     cols = {r[1] for r in con.execute("pragma table_info(businesses)")}
+    if cols and "country" not in cols:
+        con.execute("alter table businesses add column country text not null default 'IN'")
     if cols and "city" not in cols:
         con.execute("alter table businesses add column city text")
         # Older rows stored "Area, City" in `area`; the city is the last part.
@@ -164,7 +168,8 @@ def _migrate(con) -> None:
             con.execute("update businesses set city = ? where id = ?", (city, bid))
         con.commit()
     search_cols = {r[1] for r in con.execute("pragma table_info(searches)")}
-    for col, kind in (("lat", "real"), ("lon", "real"), ("state", "text"), ("population", "integer"), ("resolved", "text")):
+    for col, kind in (("lat", "real"), ("lon", "real"), ("state", "text"), ("population", "integer"), ("resolved", "text"),
+                      ("country", "text not null default 'IN'")):
         if search_cols and col not in search_cols:
             con.execute(f"alter table searches add column {col} {kind}")
     if search_cols:

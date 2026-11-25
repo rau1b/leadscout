@@ -1,13 +1,15 @@
-"""Careful sending: warm-up caps, IST sending window, random gaps, follow-ups, reply and bounce checks."""
+"""Careful sending: warm-up caps, local sending windows (IST, or the lead's US time zone), random gaps,
+follow-ups, reply and bounce checks."""
 
 import random
 import time
 from datetime import date, datetime, timedelta
 
-from leadscout.compliance import in_window, is_suppressed, opt_out, suppress
+from leadscout.compliance import is_suppressed, opt_out, suppress
 from leadscout.config import IST
 from leadscout.db import get_meta, now, set_meta
 from leadscout.pitch import templates
+from leadscout.regions import any_open_now, needs_postal_address, open_now
 
 
 def today_ist() -> date:
@@ -41,34 +43,51 @@ def bounce_rate(con, window: int = 40) -> float:
     return sum(r["status"] == "bounced" for r in rows) / len(rows)
 
 
-def next_item(con, cfg) -> dict | None:
-    """A due follow-up first, else the best approved first email.
+def next_item(con, cfg, at: datetime | None = None) -> dict | None:
+    """A due follow-up first, else the best approved first email, among leads whose local sending window is open.
 
     Items with a send claim are skipped: either another sender has them, or a send crashed after Gmail took it
     and before it was recorded. Never risk sending twice; such a lead just waits for a human to look.
+    US leads wait until your postal address is in config.toml (CAN-SPAM).
     """
+    def sendable(r) -> bool:
+        if needs_postal_address(r["country"]) and not (cfg.sender.get("postal_address") or "").strip():
+            return False
+        return open_now(cfg, r["country"], r["lat"], r["lon"], at)
+
     cutoff = (datetime.now(IST) - timedelta(days=cfg.sending["followup_after_days"])).isoformat(timespec="seconds")
-    row = con.execute(
-        """select l.business_id, l.email, b.name, b.phone, p.subject, o.gmail_id, o.thread_id
+    rows = con.execute(
+        """select l.business_id, l.email, b.name, b.phone, b.country, b.lat, b.lon, p.subject, o.gmail_id, o.thread_id
            from leads l join businesses b on b.id = l.business_id join pitches p on p.business_id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
            where l.status = 'contacted' and o.sent_at < ?
              and (select count(*) from outreach where business_id = l.business_id and kind = 'followup') < ?
              and not exists (select 1 from meta where key = 'sending:' || l.business_id || ':followup:'
                              || (select count(*) from outreach where business_id = l.business_id and kind = 'followup'))
-           order by o.sent_at limit 1""",
+           order by o.sent_at""",
         (cutoff, cfg.sending["max_followups"]),
-    ).fetchone()
-    if row:
-        return {**dict(row), "kind": "followup"}
-    row = con.execute(
-        """select l.business_id, l.email, b.name, b.phone, p.subject, p.body
+    ).fetchall()
+    for row in rows:
+        if sendable(row):
+            return {**dict(row), "kind": "followup"}
+    rows = con.execute(
+        """select l.business_id, l.email, b.name, b.phone, b.country, b.lat, b.lon, p.subject, p.body
            from leads l join businesses b on b.id = l.business_id join pitches p on p.business_id = l.business_id
            where l.status = 'approved' and p.approved = 1 and l.email is not null
              and not exists (select 1 from meta where key = 'sending:' || l.business_id || ':first:0')
-           order by l.score desc limit 1"""
-    ).fetchone()
-    return {**dict(row), "kind": "first"} if row else None
+           order by l.score desc"""
+    ).fetchall()
+    for row in rows:
+        if sendable(row):
+            return {**dict(row), "kind": "first"}
+    return None
+
+
+def waiting_countries(con) -> set[str]:
+    """Countries with approved emails or follow-ups still to go: whose sending hours matter right now."""
+    return {r[0] or "IN" for r in con.execute(
+        """select distinct b.country from leads l join businesses b on b.id = l.business_id
+           where l.status in ('approved', 'contacted')""")}
 
 
 def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
@@ -78,6 +97,8 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         return f"skipped {item['name']} (opted out)"
     s = cfg.sender
     sender = f"{s.get('name') or s['business']} <{s['email']}>"
+    if needs_postal_address(item.get("country")) and not (s.get("postal_address") or "").strip():
+        return f"skipped {item['name']} (US emails need postal_address under [sender] in config.toml)"
     if dry_run:
         what = f"follow-up to {item['email']}: {templates.followup(item, cfg)[0]}" if item["kind"] == "followup" else f"to {item['email']}: {item['subject']}"
         return f"[dry run] {what}"
@@ -94,13 +115,14 @@ def send_one(con, cfg, gmail, item: dict, dry_run: bool = False) -> str:
         con.commit()
 
     try:
+        footer = templates.us_footer(cfg) if needs_postal_address(item.get("country")) else ""
         if item["kind"] == "followup":
             subject, body = templates.followup(item, cfg)
             ref = gmail.message_id_header(item["gmail_id"])
-            args = (item["email"], subject, body, sender)
+            args = (item["email"], subject, body + footer, sender)
             kw = {"thread_id": item["thread_id"], "in_reply_to": ref, "unsubscribe": s["email"]}
         else:
-            args, kw = (item["email"], item["subject"], item["body"], sender), {"unsubscribe": s["email"]}
+            args, kw = (item["email"], item["subject"], item["body"] + footer, sender), {"unsubscribe": s["email"]}
     except Exception:
         release()  # failed before anything went to Gmail
         raise
@@ -300,8 +322,10 @@ def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
         if stop is not None and stop.is_set():
             log("Stopped.")
             return
-        if not dry_run and not in_window(sc):
-            log(f"Outside the sending window ({sc['window_start']}-{sc['window_end']} IST, {', '.join(sc['days'])}). Stopping.")
+        waiting = waiting_countries(con) or {"IN"}
+        if not dry_run and not any_open_now(cfg, waiting):
+            us = "; US leads 10:00-16:00 their local time" if "US" in waiting else ""
+            log(f"Outside the sending window ({sc['window_start']}-{sc['window_end']} IST, {', '.join(sc['days'])}{us}). Stopping.")
             return
         if not dry_run:
             replies = check_replies(con, cfg, gmail)
@@ -318,7 +342,11 @@ def _run(con, cfg, gmail, dry_run, once, log, stop, renew=lambda: True) -> None:
             return
         item = next_item(con, cfg)
         if not item:
-            log("Nothing left to send. Approve more pitches in the dashboard.")
+            if con.execute("select 1 from leads where status = 'approved' and email is not null").fetchone():
+                log("Nothing can go out right now: the approved emails left are waiting for their local sending hours"
+                    " (or, for US leads, for postal_address in config.toml).")
+            else:
+                log("Nothing left to send. Approve more pitches in the dashboard.")
             return
         log(f"[{done + 1}/{cap}] " + send_one(con, cfg, gmail, item, dry_run))
         if once or dry_run:

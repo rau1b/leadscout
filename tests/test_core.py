@@ -18,6 +18,14 @@ def con(tmp_path):
     return db.connect(tmp_path / "t.db")
 
 
+@pytest.fixture(autouse=True)
+def window_open(request, monkeypatch):
+    """Tests run at any hour: treat every lead's sending window as open, unless a test checks windows itself."""
+    if "real_window" not in request.keywords:
+        monkeypatch.setattr(sender, "open_now", lambda *a, **kw: True)
+        monkeypatch.setattr(sender, "any_open_now", lambda *a, **kw: True)
+
+
 @pytest.fixture
 def cfg():
     # Always the example config, so a user's own config.toml can't change test results.
@@ -700,7 +708,7 @@ def test_dashboard_starts_and_stops_sending(client, home, monkeypatch):
 
     monkeypatch.setattr(sending.sender, "run", run)
     monkeypatch.setattr(extras, "_gmail", lambda: SendingGmail())
-    monkeypatch.setattr(sending, "in_window", lambda sc: True)
+    monkeypatch.setattr(sending, "any_open_now", lambda *a: True)
     assert "Start sending" in client.get("/").text
     assert client.post("/send/start", follow_redirects=False).status_code == 303
     assert gate.wait(5) and sending.running()
@@ -765,7 +773,7 @@ def test_a_send_in_progress_is_not_stuck(con):
 def test_dashboard_refuses_to_start_outside_the_window(client, monkeypatch):
     from leadscout.web import extras, sending
 
-    monkeypatch.setattr(sending, "in_window", lambda sc: False)
+    monkeypatch.setattr(sending, "any_open_now", lambda *a: False)
     monkeypatch.setattr(extras, "_gmail", lambda: SendingGmail())
     assert "sending window is closed" in client.post("/send/start").text
     assert not sending.running()
@@ -869,3 +877,93 @@ def test_unsubscribe_check_only_reads_new_mail(con, cfg):
     sender.check_replies(con, cfg, Gm([]))
     sender.check_replies(con, cfg, Gm([]))
     assert calls[0] is None and calls[1] is not None
+
+
+# ---- US test ---------------------------------------------------------------------------------
+
+def test_us_time_zones_from_the_map():
+    from leadscout.regions import local_tz
+
+    zones = {name: str(local_tz("US", lat, lon)) for name, lat, lon in (
+        ("New York", 40.7, -74.0), ("Austin", 30.27, -97.74), ("Denver", 39.74, -104.99),
+        ("Phoenix", 33.45, -112.07), ("Los Angeles", 34.05, -118.24), ("Honolulu", 21.3, -157.86))}
+    assert zones == {"New York": "America/New_York", "Austin": "America/Chicago", "Denver": "America/Denver",
+                     "Phoenix": "America/Phoenix", "Los Angeles": "America/Los_Angeles", "Honolulu": "Pacific/Honolulu"}
+    assert str(local_tz("IN", 15.3, 73.9)) == "Asia/Kolkata"
+
+
+@pytest.mark.real_window
+def test_us_leads_are_emailed_in_their_own_hours(cfg):
+    from datetime import timezone
+
+    from leadscout.regions import open_now
+
+    at = datetime(2027, 1, 20, 15, 30, tzinfo=timezone.utc)  # Wednesday: 10:30 New York, 07:30 Los Angeles, 21:00 IST
+    assert open_now(cfg, "US", 40.7, -74.0, at)
+    assert not open_now(cfg, "US", 34.05, -118.24, at)
+    assert not open_now(cfg, "IN", at=at)
+    assert not open_now(cfg, "US", 40.7, -74.0, datetime(2027, 1, 18, 15, 30, tzinfo=timezone.utc))  # MLK Day
+
+
+def test_us_phone_numbers_are_read_as_us():
+    from leadscout.sources.common import phone_info
+
+    assert phone_info("(201) 555-0123", "US")[0] == "+12015550123"
+
+
+def _us_lead(con, postal=None):
+    _seed_lead(con, status="approved")
+    con.execute("delete from outreach")
+    con.execute("update businesses set country = 'US', lat = 30.27, lon = -97.74, city = 'Austin', phone = '+12015550123', phone_type = 'mobile'")
+    con.execute("insert into pitches (business_id, subject, body, source, approved, created_at, updated_at) values ('b1', 'Hi', 'Body', 't', 1, '2026-11-20', '2026-11-20')")
+    con.commit()
+
+
+def test_us_email_waits_for_a_postal_address(con, cfg):
+    _us_lead(con)
+    assert sender.next_item(con, cfg) is None
+    cfg.sender["postal_address"] = "PO Box 12, Margao, Goa 403601, India"
+    item = sender.next_item(con, cfg)
+    assert item["country"] == "US"
+    gm = SendingGmail()
+    sent = []
+    gm.send = lambda to, subject, body, sender_, **kw: sent.append(body) or {"id": "x", "threadId": "t"}
+    sender.send_one(con, cfg, gm, item)
+    assert sent[0].startswith("Body") and "This is a business offer from" in sent[0] and "PO Box 12, Margao" in sent[0]
+
+
+def test_india_email_has_no_us_footer(con, cfg):
+    _approved_first(con)
+    cfg.sender["postal_address"] = "PO Box 12, Margao"
+    sent = []
+    gm = SendingGmail()
+    gm.send = lambda to, subject, body, sender_, **kw: sent.append(body) or {"id": "x", "threadId": "t"}
+    sender.send_one(con, cfg, gm, sender.next_item(con, cfg))
+    assert sent == ["Body"]
+
+
+def test_us_template_is_honest_about_location_and_skips_whatsapp(cfg):
+    f = {"name": "Lone Star Dental", "category": "dentist", "site_class": "none", "city": "Austin", "area": "Austin, Texas",
+         "country": "US"}
+    p = templates.render(f, cfg)
+    assert "India, and work with US businesses remotely" in p["body"] and "here in" not in p["body"]
+    assert p["whatsapp"] == ""
+
+
+def test_no_whatsapp_link_for_us_leads(client, home):
+    assert "Open WhatsApp chat" in client.get("/leads/b1").text  # an India lead with a mobile has one
+    home.execute("update businesses set country = 'US'")
+    home.commit()
+    assert "Open WhatsApp chat" not in client.get("/leads/b1").text
+
+
+def test_us_search_is_queued_with_its_country(con, monkeypatch):
+    from leadscout import searches
+    from leadscout.sources import geo
+
+    monkeypatch.setattr(geo, "locate_us_city", lambda text: {"name": "Austin", "state": "Texas", "lat": 30.27, "lon": -97.74,
+                                                             "label": "Austin, Texas"})
+    monkeypatch.setattr(searches._wake, "set", lambda: None)
+    sid = searches.queue_search(con, "Austin, TX", "", ["dental"], country="US")
+    row = con.execute("select city, country, resolved from searches where id = ?", (sid,)).fetchone()
+    assert tuple(row) == ("Austin", "US", "Austin, Texas")

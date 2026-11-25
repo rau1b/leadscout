@@ -51,6 +51,18 @@
   var picked = document.getElementById("city-picked");
   if (!input || !list) return;
   var items = [], active = -1, timer = null, defaultHint = picked.textContent;
+  // USA: no offline list, so no suggestions; the city is looked up when the search starts.
+  function us() { var c = document.querySelector("input[name=country]:checked"); return c && c.value === "US"; }
+  document.querySelectorAll("input[name=country]").forEach(function (r) {
+    r.addEventListener("change", function () {
+      defaultHint = us() ? picked.dataset.us : picked.dataset.in;
+      picked.textContent = defaultHint;
+      picked.classList.remove("ok");
+      hidden.value = "";
+      input.placeholder = us() ? "e.g. Austin, TX" : "Start typing, e.g. Margao, Warangal, Hyderabad";
+      close();
+    });
+  });
 
   function close() { list.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); active = -1; }
   function highlight(i) {
@@ -94,7 +106,7 @@
     picked.classList.remove("ok");
     clearTimeout(timer);
     var q = input.value.trim();
-    if (q.length < 2) { close(); return; }
+    if (q.length < 2 || us()) { close(); return; }
     timer = setTimeout(function () {
       fetch("/places?q=" + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (data) {
         if (input.value.trim() !== q) return;

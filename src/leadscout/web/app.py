@@ -12,10 +12,10 @@ from fastapi.templating import Jinja2Templates
 
 from leadscout import config, db, searches
 from leadscout.audit.classify import LABELS
-from leadscout.compliance import in_window, lead_is_suppressed, opt_out
+from leadscout.compliance import lead_is_suppressed, opt_out
 from leadscout.config import IST
 from leadscout.db import jload, now
-from leadscout.mailer.sender import daily_cap, next_item, sent_today, today_ist
+from leadscout.mailer.sender import daily_cap, next_item, sent_today, today_ist, waiting_countries
 from leadscout.pitch import jobs, templates
 
 HERE = Path(__file__).parent
@@ -60,6 +60,8 @@ STATUS_LABELS = {
     "won": "Won", "lost": "Lost", "opted_out": "Opted out", "bounced": "Bounced", "excluded": "Excluded", "hidden": "Hidden",
 }
 tpl.env.globals.update(status_labels=STATUS_LABELS, site_labels=LABELS)
+# Changes with the files, so a browser never keeps an old app.js or app.css after an update.
+tpl.env.globals["asset_v"] = max(int(f.stat().st_mtime) for f in (HERE / "static").glob("app.*"))
 tpl.env.filters["nicecat"] = lambda c: (c or "").replace("_", " ").capitalize()
 tpl.env.filters["fromjson"] = lambda s: __import__("json").loads(s) if s else {}
 tpl.env.filters["hm"] = lambda s: s[11:16] if s else ""
@@ -82,7 +84,7 @@ def ctx(request: Request, **extra) -> dict:
 
 
 LEAD_SQL = """
-select b.id, b.name, b.category, b.locality, b.area, b.city, b.address, b.website, b.phone, b.phone_type, b.socials, b.source,
+select b.id, b.name, b.category, b.locality, b.area, b.city, b.country, b.address, b.website, b.phone, b.phone_type, b.socials, b.source,
        a.site_class, a.fetch_error, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year, a.generator,
        a.has_whatsapp, a.has_tel, a.final_url,
        l.score, l.reasons, l.status, l.email, l.updated_at,
@@ -125,7 +127,7 @@ def lead_row(lead_id: str):
 
 
 def wa_link(r) -> str | None:
-    if r["phone_type"] != "mobile" or not r["phone"]:
+    if r["phone_type"] != "mobile" or not r["phone"] or r["country"] == "US":  # US: email only
         return None
     if lead_is_suppressed(db.connect(), r["id"]):
         return None
@@ -147,7 +149,8 @@ def sending_ctx(con, cfg) -> dict:
         "send_log": list(sending.log),
         "send_block": "" if sending.running() else sending.block_reason(con, cfg),
         "stuck": stuck_claims(con),
-        "open_now": in_window(cfg.sending),
+        "open_now": sending.window_open(con, cfg),
+        "us_waiting": "US" in waiting_countries(con),
     }
 
 
@@ -397,12 +400,16 @@ def place_suggestions(q: str = ""):
 
 @app.post("/find")
 def start_find(city: str = Form(""), neighbourhood: str = Form(""), types: list[str] = Form([]), extra: str = Form(""),
-               place_id: str = Form("")):
+               place_id: str = Form(""), country: str = Form("IN")):
+    import httpx
+
     con = db.connect()
     try:
-        searches.queue_search(con, city, neighbourhood, types, extra, int(place_id) if place_id.isdigit() else None)
+        searches.queue_search(con, city, neighbourhood, types, extra, int(place_id) if place_id.isdigit() else None, country)
     except ValueError as e:
         return RedirectResponse(f"/find?error={quote(str(e))}", status_code=303)
+    except httpx.HTTPError:
+        return RedirectResponse(f"/find?error={quote('Could not reach the map service to find that city. Try again in a minute.')}", status_code=303)
     return RedirectResponse("/find", status_code=303)
 
 
