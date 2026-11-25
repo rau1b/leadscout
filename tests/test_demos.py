@@ -44,6 +44,28 @@ def page(path) -> BeautifulSoup:
     return BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
 
 
+PLACEHOLDERS = {"Your photos here Placeholder", "Your services and prices here Placeholder", "Opening hours Placeholder", ""}
+
+
+def without_placeholders(soup) -> BeautifulSoup:
+    """The page minus its labelled empty frames: what's left must be facts from the row or our fixed copy."""
+    soup = BeautifulSoup(str(soup), "html.parser")
+    for ph in soup.select(".ph"):
+        ph.decompose()
+    return soup
+
+
+def row_with(**extra):
+    """A businesses-like row with extra columns (e.g. hours, basic_category) that the schema may not have yet."""
+    import sqlite3
+
+    base = {k: None for k in ("category", "category_path", "address", "locality", "city", "area", "postcode", "lat", "lon", "phone", "phone_type")}
+    vals = base | {"name": "Lotus"} | extra
+    m = sqlite3.connect(":memory:")
+    m.row_factory = sqlite3.Row
+    return m.execute("select " + ", ".join(f"? as {k}" for k in vals), list(vals.values())).fetchone()
+
+
 def test_banner_noindex_and_no_scripts_or_images(con):
     add(con, **FULL)
     d = demos.build(con, "dent1", SENDER)
@@ -60,7 +82,7 @@ def test_only_facts_from_the_row(con):
     row = add(con, **FULL)
     d = demos.build(con, "dent1", SENDER)
     soup = page(d.path)
-    text = soup.get_text(" ", strip=True)
+    text = without_placeholders(soup).get_text(" ", strip=True)
     assert not INVENTED.search(text)
 
     # Every number on the page is the business's phone, postcode, address or coordinates, or our own phone.
@@ -75,7 +97,7 @@ def test_only_facts_from_the_row(con):
     assert soup.find("a", href="tel:+919812345678")
     assert soup.find("a", href="https://wa.me/919812345678")
     assert "smile@clinic.in" not in str(soup)  # the business's own email isn't on the page; the enquiry section shows only ours
-    assert "Hours" not in text  # the row has no hours
+    assert not soup.select("p.hours")  # the row has no hours: the frame stays
 
 
 def test_missing_fields_are_left_out(con):
@@ -88,8 +110,28 @@ def test_missing_fields_are_left_out(con):
     assert not soup.select('a[href*="wa.me"]')  # a landline gets no WhatsApp link
     assert not soup.select('a[href*="google.com/maps"]')  # no coordinates or address
     assert not soup.select(".kicker") and not soup.select(".where")
-    for word in ("What", "Where", "Area", "Hours", "Directions"):
-        assert word not in text.split(), word
+    assert [dt.get_text() for dt in soup.select("dt")] == ["Phone"]
+    assert "Directions" not in text
+
+
+def test_placeholders_are_labelled_empty_frames(con):
+    """Step 1: the page reads like a website, but every frame says it's a placeholder and holds no facts or numbers."""
+    add(con, **FULL)
+    soup = page(demos.build(con, "dent1", SENDER).path)
+    frames = soup.select(".ph")
+    assert {f["data-placeholder"] for f in frames} == {"photos", "services", "hours"}
+    for f in frames:
+        assert f.get_text(" ", strip=True) in PLACEHOLDERS
+    assert not re.search(r"\d", " ".join(f.get_text() for f in frames))
+    assert not soup.find_all(["img", "picture"])
+
+
+def test_a_real_fact_replaces_its_placeholder():
+    _, html = demos.render(row_with(hours="Mon-Sat 10:00-20:00"), SENDER)
+    soup = BeautifulSoup(html, "html.parser")
+    assert soup.select_one("p.hours").get_text() == "Mon-Sat 10:00-20:00"
+    assert not soup.select('[data-placeholder="hours"]')
+    assert soup.select('[data-placeholder="photos"]') and soup.select('[data-placeholder="services"]')  # never in the row
 
 
 def test_template_by_category(con):
@@ -101,17 +143,10 @@ def test_template_by_category(con):
 
 def test_basic_category_wins_when_the_column_exists(con):
     """Contract C3: Jason's migration adds businesses.basic_category; until then category and category_path are used."""
-    import sqlite3
-
-    m = sqlite3.connect(":memory:")
-    m.row_factory = sqlite3.Row
-    row = m.execute(
-        """select 'Lotus' as name, 'shopping' as category, null as category_path, 'beauty_salon' as basic_category,
-                  null as address, null as locality, null as city, null as area, null as postcode,
-                  null as lat, null as lon, null as phone, null as phone_type"""
-    ).fetchone()
+    row = row_with(category="shopping", basic_category="beauty_salon")
     assert demos.pick_template(row) == "salon"
     assert demos.facts(row)["what"] == "Beauty salon"
+    assert demos.pick_template(row_with(category="dentist", basic_category=None)) == "clinic"  # null falls back
 
 
 def test_row_event_and_expiry(con):

@@ -37,6 +37,14 @@ dd{margin:0;overflow-wrap:anywhere}
 .enquiry p{margin:0 0 12px}
 .enquiry .links{display:flex;flex-wrap:wrap;gap:8px 18px;font-weight:600}
 footer{padding:0 0 40px;color:var(--muted);font-size:13px}
+/* Placeholders: empty frames that say what goes there. A real fact always replaces its frame. */
+.ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:120px;padding:16px;border:2px dashed var(--line);border-radius:12px;color:var(--muted);text-align:center;font-size:15px;background:repeating-linear-gradient(135deg,transparent 0 10px,var(--soft) 10px 11px)}
+.ph b{color:var(--ink);font-weight:600}
+.ph small{font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.photos{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:repeat(2,96px);gap:10px}
+.photos .ph{min-height:0}
+.photos .ph:first-child{grid-row:span 2}
+.hours{margin:0;white-space:pre-line}
 @media (min-width:720px){.actions{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
 </style>
 </head>
@@ -57,15 +65,39 @@ footer{padding:0 0 40px;color:var(--muted);font-size:13px}
 </nav>
 {% endif %}
 
+<section aria-labelledby="photos">
+  <h2 id="photos">Photos</h2>
+  <div class="photos">
+    <div class="ph" data-placeholder="photos"><b>Your photos here</b><small>Placeholder</small></div>
+    <div class="ph" data-placeholder="photos" aria-hidden="true"></div>
+    <div class="ph" data-placeholder="photos" aria-hidden="true"></div>
+  </div>
+</section>
+
+<section aria-labelledby="services">
+  <h2 id="services">Services</h2>
+  <div class="ph" data-placeholder="services"><b>Your services and prices here</b><small>Placeholder</small></div>
+</section>
+
+<section aria-labelledby="hours">
+  <h2 id="hours">Opening hours</h2>
+  {% if biz.hours %}
+  <p class="hours">{{ biz.hours }}</p>
+  {% else %}
+  <div class="ph" data-placeholder="hours"><b>Opening hours</b><small>Placeholder</small></div>
+  {% endif %}
+</section>
+
+{% if biz.what or biz.address or biz.area or biz.phone %}
 <section aria-labelledby="about">
   <h2 id="about">{% block about_title %}About{% endblock %}</h2>
   <dl>
     {% if biz.what %}<dt>What</dt><dd>{{ biz.what }}</dd>{% endif %}
     {% if biz.address %}<dt>Where</dt><dd>{{ biz.address }}</dd>{% elif biz.area %}<dt>Area</dt><dd>{{ biz.area }}</dd>{% endif %}
-    {% if biz.hours %}<dt>Hours</dt><dd>{{ biz.hours }}</dd>{% endif %}
     {% if biz.phone %}<dt>Phone</dt><dd><a href="{{ biz.tel }}">{{ biz.phone }}</a></dd>{% endif %}
   </dl>
 </section>
+{% endif %}
 
 <section class="enquiry" aria-labelledby="enquiry">
   <h2 id="enquiry">Like this page?</h2>
