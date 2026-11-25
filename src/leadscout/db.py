@@ -104,6 +104,14 @@ def _migrate(con) -> None:
     con.commit()
 
 
+def log_event(con, type: str, business_id=None, actor: str = "system", **data) -> None:
+    """Record an event. Doesn't commit, so the event lands in the same transaction as the change it describes."""
+    con.execute(
+        "insert into events (at, business_id, type, actor, data_json) values (?, ?, ?, ?, ?)",
+        (now(), business_id, type, actor, json.dumps(data, ensure_ascii=False) if data else None),
+    )
+
+
 def jload(s) -> list:
     return json.loads(s) if s else []
 

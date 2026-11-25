@@ -75,3 +75,19 @@ def test_failed_migration_rolls_back(tmp_path, monkeypatch):
     con = sqlite3.connect(path)
     assert _version(con) == latest
     assert not con.execute("select 1 from sqlite_master where name = 'half_done'").fetchone()
+
+
+def test_log_event_and_forget_deletes_events(tmp_path, monkeypatch):
+    from leadscout.compliance import forget
+
+    monkeypatch.setenv("LEADSCOUT_HOME", str(tmp_path))  # forget() also cleans pitch files under data/
+    con = db.connect()
+    for bid, email in (("a", "a@shop.in"), ("b", "b@shop.in")):
+        con.execute("insert into businesses (id, source, name, emails, fetched_at) values (?, 't', ?, ?, '2026-11-20')", (bid, bid, f'["{email}"]'))
+        db.log_event(con, "lead.created", bid, actor="you", note="Café")
+    db.log_event(con, "search.done")  # not about a business
+    con.commit()
+    assert con.execute("select data_json from events where business_id = 'a'").fetchone()[0] == '{"note": "Café"}'
+
+    assert forget(con, "a@shop.in") == 1
+    assert [r[0] for r in con.execute("select business_id from events order by id")] == ["b", None]
