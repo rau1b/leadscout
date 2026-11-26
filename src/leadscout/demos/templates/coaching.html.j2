@@ -1,0 +1,33 @@
+{# Coaching / tuition: navy and marigold, a ruled-notebook header with an open book, courses as cards. #}
+{% extends "base.html.j2" %}
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#f7f8fc;--card:#fff;--ink:#141c3a;--muted:#4c5574;--line:#d7dcec;--accent:#1f3a8a;--accent-ink:#fff;--soft:#fdf1d2;
+{% endblock %}
+{% block css %}
+.ruled{padding:88px 0 28px;background:repeating-linear-gradient(transparent 0 31px,#e9ecf5 31px 32px);border-left:4px solid #e8a317}
+.ruled .wrap{padding-left:24px}
+.ruled svg{width:96px;margin-bottom:16px}
+.ruled h1{font-family:var(--sans);font-weight:800;letter-spacing:-.02em}
+.cards{display:grid;gap:10px}
+.cards .ph{min-height:80px;align-items:flex-start;text-align:left;border-left:6px solid #e8a317}
+.s-hours{background:var(--soft);margin:0 -16px;padding:24px 16px}
+.photos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.v-coaching h2{font-family:var(--sans);font-weight:700}
+{% endblock %}
+{% block page %}
+<header class="ruled">
+  <div class="wrap">
+    <svg class="art" viewBox="0 0 96 56" aria-hidden="true"><path d="M48 12C38 4 20 2 6 6v44c14-4 32-2 42 6z" fill="var(--accent)"/><path d="M48 12c10-8 28-10 42-6v44c-14-4-32-2-42 6z" fill="#e8a317"/><path d="M14 16h24M14 24h24M14 32h20M58 16h24M58 24h24M58 32h20" stroke="#fff" stroke-width="2" opacity=".7"/></svg>
+    {{ p.heading() }}
+  </div>
+</header>
+<div class="wrap">
+{{ p.actions() }}
+{{ p.services(cls="cards", extra=2) }}
+{{ p.hours() }}
+{{ p.enquiry() }}
+{{ p.about() }}
+{{ p.photos(extra=1) }}
+{{ p.footer() }}
+</div>
+{% endblock %}

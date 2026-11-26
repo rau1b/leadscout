@@ -44,7 +44,8 @@ def page(path) -> BeautifulSoup:
     return BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
 
 
-PLACEHOLDERS = {"Your photos here Placeholder", "Your services and prices here Placeholder", "Opening hours Placeholder", ""}
+# Every frame either carries one of the verticals' labels plus "Placeholder", or is an empty decorative frame.
+PLACEHOLDERS = {f"{c[k]} Placeholder" for c in demos.COPY.values() for k in ("services_ph", "photos_ph", "hours_ph")} | {""}
 
 
 def without_placeholders(soup) -> BeautifulSoup:
@@ -139,6 +140,90 @@ def test_template_by_category(con):
     add(con, id="c", source="t", name="Care", category=None, category_path="health_and_medical > physiotherapist")
     add(con, id="g", source="t", name="Shree Hardware", category="hardware_store")
     assert [demos.build(con, i, SENDER).template for i in ("s", "c", "g")] == ["salon", "clinic", "shop"]
+
+
+# One minimal business per vertical: a name and the category Overture would give it.
+MINIMAL = {
+    "clinic": "dentist", "salon": "beauty_salon", "restaurant": "south_indian_restaurant",
+    "coaching": "tutoring_service", "realestate": "real_estate_agent", "shop": "hardware_store",
+}
+
+
+@pytest.mark.parametrize("vertical", list(MINIMAL))
+def test_each_vertical_renders_from_a_minimal_row(vertical):
+    template, html = demos.render(row_with(category=MINIMAL[vertical]), SENDER)
+    assert template == vertical
+    soup = BeautifulSoup(html, "html.parser")
+    assert soup.select_one(".concept").get_text(strip=True) == "Concept made by Kite Studio for Lotus. Not their official site."
+    assert soup.find("meta", attrs={"name": "robots"})["content"] == "noindex"
+    assert soup.body["class"] == [f"v-{vertical}"]
+    assert soup.select(".wrap")[-1].find_all(recursive=False)[-1].name == "footer"  # the "not checked by them" note closes the page
+    # With nothing but a name, every frame is a placeholder, and there's no call, WhatsApp or map link to invent.
+    assert {f["data-placeholder"] for f in soup.select(".ph")} == {"photos", "services", "hours"}
+    assert all(f.get_text(" ", strip=True) in PLACEHOLDERS for f in soup.select(".ph"))
+    assert [a["href"] for a in soup.select('a[href^="tel:"]')] == ["tel:+919876543210"]  # ours, in the enquiry section
+    assert not soup.select('a[href*="wa.me"], a[href*="google.com/maps"]')
+    assert not INVENTED.search(without_placeholders(soup).get_text(" ", strip=True))
+
+
+@pytest.mark.parametrize("vertical", list(MINIMAL))
+def test_performance_budget_and_no_external_requests(vertical):
+    """Under 30 KB, no JavaScript, and nothing the browser would fetch: no scripts, images, stylesheets, fonts or frames."""
+    row = row_with(category=MINIMAL[vertical], name="Sri Lakshmi Venkateswara Enterprises and Sons", address="Shop 4, Main Road",
+                   locality="Panaji", city="Goa", postcode="403001", lat=15.4909, lon=73.8278, phone="+919812345678", phone_type="mobile",
+                   hours="Mon-Sat 09:00-21:00")
+    _, html = demos.render(row, SENDER)
+    assert len(html.encode("utf-8")) < 30_000
+    soup = BeautifulSoup(html, "html.parser")
+    assert not soup.find_all(["script", "img", "picture", "iframe", "link", "object", "embed", "video", "audio", "source"])
+    assert not [t for t in soup.find_all(True) if t.has_attr("src") or t.has_attr("srcset") or any(a.startswith("on") for a in t.attrs)]
+    css = soup.style.string
+    assert "@import" not in css and "@font-face" not in css and not re.search(r"url\(", css)
+    for svg_ref in soup.find_all(attrs={"href": True}):  # only plain links a person taps; no <use href> or xlink to outside files
+        assert svg_ref.name == "a", svg_ref.name
+
+
+def test_the_six_verticals_look_different():
+    """Two demos in the same street shouldn't look identical: each vertical has its own colours and section order."""
+    pages = {v: BeautifulSoup(demos.render(row_with(category=c, phone="+919812345678", phone_type="mobile"), SENDER)[1], "html.parser")
+             for v, c in MINIMAL.items()}
+    accents = {v: re.search(r"--accent:(#[0-9a-f]+)", s.style.string).group(1) for v, s in pages.items()}
+    orders = {v: tuple(sec.get("class", ["?"])[0] for sec in s.find_all("section")) for v, s in pages.items()}
+    headers = {v: s.select_one("header")["class"][0] for v, s in pages.items()}
+    assert len(set(accents.values())) == 6, accents
+    assert len(set(orders.values())) == 6, orders
+    assert len(set(headers.values())) == 6, headers
+
+
+@pytest.mark.parametrize(
+    "category, path, expected",
+    [
+        ("dentist", None, "clinic"),
+        (None, "health_and_medical > physiotherapist", "clinic"),
+        ("medical_spa", None, "clinic"),
+        ("hair_salon", None, "salon"),
+        ("barber", None, "salon"),  # "bar" is a whole-word match, so a barber isn't a restaurant
+        ("spanish_restaurant", None, "restaurant"),  # "spa" is a whole-word match too
+        ("cafe", None, "restaurant"),
+        (None, "eat_and_drink > bakery", "restaurant"),
+        ("beauty_school", None, "coaching"),
+        ("tutoring_service", None, "coaching"),
+        ("real_estate_agent", None, "realestate"),
+        ("musical_instrument_store", None, "shop"),
+        ("pet_food_store", None, "shop"),
+        ("software_developer", None, "shop"),
+        (None, None, "shop"),
+    ],
+)
+def test_template_by_category_fallback(category, path, expected):
+    assert demos.pick_template(row_with(category=category, category_path=path)) == expected
+
+
+@pytest.mark.parametrize("basic, expected", [("restaurant", "restaurant"), ("education", "coaching"), ("real_estate", "realestate"),
+                                             ("dentist", "clinic"), ("beauty_salon", "salon"), ("clothing_store", "shop")])
+def test_template_by_basic_category(basic, expected):
+    """C3: basic_category decides even when category says something else."""
+    assert demos.pick_template(row_with(category="hardware_store", basic_category=basic)) == expected
 
 
 def test_basic_category_wins_when_the_column_exists(con):

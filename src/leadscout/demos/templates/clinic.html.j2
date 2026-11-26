@@ -1,6 +1,28 @@
-{# Clinics and dentists: calm, clean teal on near-white. #}
+{# Clinic / dentist: calm teal, a split header with a soft plus mark, timings and visit side by side. #}
 {% extends "base.html.j2" %}
-{% block palette %}
-  --bg:#f6f9f9;--ink:#13272a;--muted:#4f6467;--line:#dce7e7;--accent:#0f6e6a;--accent-ink:#fff;--soft:#e6f1f0;
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#f6f9f9;--card:#fff;--ink:#13272a;--muted:#4f6467;--line:#d3e3e2;--accent:#0f6e6a;--accent-ink:#fff;--soft:#e6f1f0;
 {% endblock %}
-{% block about_title %}Visit the clinic{% endblock %}
+{% block css %}
+.hero{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:end;padding:88px 0 24px;border-bottom:1px solid var(--line)}
+.hero svg{width:76px}
+.pair{display:grid;gap:0 24px}
+.pair section,.s-services{border-top:1px solid var(--line)}
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.photos .ph{min-height:96px;padding:8px;font-size:13px}
+@media (min-width:600px){.pair{grid-template-columns:1fr 1fr}}
+{% endblock %}
+{% block page %}
+<div class="wrap">
+<header class="hero">
+  <div>{{ p.heading() }}</div>
+  <svg class="art" viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="38" fill="var(--soft)"/><rect x="31" y="16" width="18" height="48" rx="6" fill="var(--accent)"/><rect x="16" y="31" width="48" height="18" rx="6" fill="var(--accent)"/></svg>
+</header>
+{{ p.actions() }}
+<div class="pair">{{ p.hours() }}{{ p.about() }}</div>
+{{ p.services() }}
+{{ p.photos() }}
+{{ p.enquiry() }}
+{{ p.footer() }}
+</div>
+{% endblock %}

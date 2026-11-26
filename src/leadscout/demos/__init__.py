@@ -6,6 +6,7 @@ Honesty rules (tests/test_demos.py checks them):
 - The slug is unguessable, the page expires after 30 days, and a suppressed business gets no page.
 """
 
+import re
 import secrets
 import shutil
 from dataclasses import dataclass
@@ -21,13 +22,37 @@ from leadscout.compliance import is_suppressed
 
 EXPIRES_AFTER_DAYS = 30
 
-# Matched against basic_category, then category + category_path (Overture's taxonomy, e.g. "dentist", "health_and_medical > dentist").
-# Clinic is checked first, so "medical_spa" gets the clinic page.
+# Matched word by word against basic_category, then category + category_path (Overture's taxonomy, e.g. "dentist",
+# "health_and_medical > dentist"). A word of 5+ letters also matches as a prefix ("physio" -> "physiotherapist"); a shorter
+# one must match a whole word, so "spa" doesn't catch "spanish_restaurant" and "bar" doesn't catch "barber".
+# Checked in this order: "beauty_school" is coaching, "medical_spa" is a clinic. Anything else gets the shop page.
 VERTICALS = {
-    "clinic": ("dentist", "dental", "clinic", "doctor", "physio", "dermatolog", "hospital", "medical", "orthodont", "optometr", "eye_care", "health"),
-    "salon": ("salon", "spa", "beauty", "barber", "hair", "nail", "massage", "makeup", "cosmetic"),
+    "coaching": ("coaching", "tutor", "tutoring", "tuition", "school", "educational", "education", "academy", "institute",
+                 "training", "classes", "college", "preschool", "dance", "yoga"),
+    "clinic": ("dentist", "dental", "clinic", "doctor", "physio", "dermatolog", "hospital", "medical", "orthodont", "optometr",
+               "eye", "health", "pediatric", "ayurved", "homeopath", "diagnostic", "pathology"),
+    "salon": ("salon", "spa", "beauty", "barber", "hair", "hairdresser", "nail", "massage", "makeup", "cosmetic", "bridal"),
+    "restaurant": ("restaurant", "cafe", "cafeteria", "coffee", "bakery", "eat", "eatery", "dhaba", "bar", "pub", "tea", "juice",
+                   "sweet", "catering", "pizza", "biryani", "canteen", "diner", "bistro", "dessert", "mess"),
+    "realestate": ("estate", "realtor", "realty", "property", "properties", "builder", "builders"),
 }
-LABELS = {"clinic": "clinic", "salon": "salon", "shop": "shop"}  # "Call the clinic"
+
+# Each vertical's own wording. Only labels and headings: nothing here states a fact about the business.
+COPY = {
+    "clinic": {"call": "Call the clinic", "services_h": "Treatments", "services_ph": "Your treatments and fees here",
+               "photos_h": "The clinic", "photos_ph": "Your clinic photos here", "hours_h": "Clinic timings", "hours_ph": "Your clinic timings here", "visit_h": "Visit the clinic"},
+    "salon": {"call": "Call the salon", "services_h": "Services", "services_ph": "Your services and prices here",
+              "photos_h": "Gallery", "photos_ph": "Your photos here", "hours_h": "Opening hours", "hours_ph": "Your opening hours here", "visit_h": "Visit the salon"},
+    "restaurant": {"call": "Call", "services_h": "Menu", "services_ph": "Your menu and prices here",
+                   "photos_h": "Photos", "photos_ph": "Your food photos here", "hours_h": "Opening hours", "hours_ph": "Your opening hours here", "visit_h": "Find us"},
+    "coaching": {"call": "Call to enquire", "services_h": "Courses", "services_ph": "Your courses, batches and fees here",
+                 "photos_h": "Photos", "photos_ph": "Your classroom photos here", "hours_h": "Batch timings", "hours_ph": "Your batch timings here", "visit_h": "Visit the centre"},
+    "realestate": {"call": "Call the office", "services_h": "Listings", "services_ph": "Your current listings here",
+                   "photos_h": "Photos", "photos_ph": "Your project photos here", "hours_h": "Office hours", "hours_ph": "Your office hours here", "visit_h": "Visit the office"},
+    "shop": {"call": "Call the shop", "services_h": "Products", "services_ph": "Your products and prices here",
+             "photos_h": "Photos", "photos_ph": "Your shop photos here", "hours_h": "Opening hours", "hours_ph": "Your opening hours here", "visit_h": "Visit the shop"},
+}
+TEMPLATES = tuple(COPY)
 
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -63,12 +88,16 @@ def _basic(row) -> str | None:
     return (row["basic_category"] or None) if "basic_category" in row.keys() else None
 
 
+def _matches(word: str, tokens: list[str]) -> bool:
+    return any(t == word or (len(word) >= 5 and t.startswith(word)) for t in tokens)
+
+
 def pick_template(row) -> str:
-    """basic_category first (C3), then category and category_path."""
+    """basic_category first (C3), then category and category_path; the shop page when nothing matches."""
     for cat in (_basic(row), f"{row['category'] or ''} {row['category_path'] or ''}"):
-        cat = (cat or "").lower()
+        tokens = re.findall(r"[a-z]+", (cat or "").lower())
         for name, words in VERTICALS.items():
-            if any(w in cat for w in words):
+            if any(_matches(w, tokens) for w in words):
                 return name
     return "shop"
 
@@ -145,7 +174,7 @@ def studio_of(sender: dict) -> dict:
 def render(row, sender: dict) -> tuple[str, str]:
     """(template name, page HTML) for this businesses row."""
     template = pick_template(row)
-    html = _env.get_template(f"{template}.html.j2").render(biz=facts(row), us=studio_of(sender), label=LABELS[template])
+    html = _env.get_template(f"{template}.html.j2").render(biz=facts(row), us=studio_of(sender), v=COPY[template], template=template)
     return template, html
 
 

@@ -1,0 +1,36 @@
+{# Restaurant / cafe: a terracotta band with a steaming bowl, the menu card up front. #}
+{% extends "base.html.j2" %}
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#fbf4ea;--card:#fffaf2;--ink:#2b1a10;--muted:#6e5646;--line:#ead8c3;--accent:#b4441f;--accent-ink:#fff;--soft:#f6e6d2;
+{% endblock %}
+{% block css %}
+.band{background:var(--accent);color:#fff;padding:88px 0 0}
+.band .kicker{color:#ffd9c4}
+.band .where{color:#ffe9dc}
+.band .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.band svg.bowl{width:84px;flex:none}
+.band svg.wave{width:100%;margin-top:20px;fill:var(--bg)}
+.menu{padding:20px;background:var(--card);border:1px solid var(--line);border-radius:4px;box-shadow:6px 6px 0 var(--soft)}
+.menu .ph{min-height:220px}
+.photos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.photos .ph{min-height:130px}
+.split{display:grid;gap:0 24px}
+@media (min-width:600px){.split{grid-template-columns:1fr 1fr}}
+{% endblock %}
+{% block page %}
+<header class="band">
+  <div class="wrap top">
+    <div>{{ p.heading() }}</div>
+    <svg class="art bowl" viewBox="0 0 84 72" aria-hidden="true"><path d="M30 6c-4 6 4 8 0 14M42 4c-4 6 4 8 0 14M54 6c-4 6 4 8 0 14" stroke="#ffd9c4" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M6 32h72c0 20-16 34-36 34S6 52 6 32z" fill="#fff"/><rect x="26" y="64" width="32" height="5" rx="2" fill="#fff"/></svg>
+  </div>
+  <svg class="art wave" viewBox="0 0 600 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 24V12C100 0 200 24 300 12S500 0 600 12v12z"/></svg>
+</header>
+<div class="wrap">
+{{ p.actions() }}
+{{ p.services(cls="menu") }}
+{{ p.photos(extra=1) }}
+<div class="split">{{ p.hours() }}{{ p.about() }}</div>
+{{ p.enquiry() }}
+{{ p.footer() }}
+</div>
+{% endblock %}

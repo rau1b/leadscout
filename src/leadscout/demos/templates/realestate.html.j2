@@ -1,0 +1,34 @@
+{# Real estate: deep green with a skyline, listings as a swipeable card row, the area up front. #}
+{% extends "base.html.j2" %}
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#f4f5f1;--card:#fff;--ink:#14231c;--muted:#4f5e55;--line:#d6ddd5;--accent:#1d5c43;--accent-ink:#fff;--soft:#e6ece4;
+{% endblock %}
+{% block css %}
+.dark{background:#14231c;color:#f4f5f1;padding:88px 0 0}
+.dark .kicker{color:#a8d5bf}
+.dark .where{color:#cfe3d8;font-size:18px}
+.dark h1{font-family:var(--sans);font-weight:700;letter-spacing:-.03em}
+.dark svg{width:100%;margin-top:24px}
+.listings{display:grid;grid-auto-flow:column;grid-auto-columns:78%;gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+.listings .ph{min-height:180px;scroll-snap-align:start}
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.photos .ph{min-height:90px;padding:8px;font-size:13px}
+.v-realestate h2{font-family:var(--sans);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.06em}
+.s-about,.s-hours{border-top:1px solid var(--line)}
+@media (min-width:600px){.listings{grid-auto-flow:row;grid-template-columns:repeat(3,1fr)}}
+{% endblock %}
+{% block page %}
+<header class="dark">
+  <div class="wrap">{{ p.heading() }}</div>
+  <svg class="art" viewBox="0 0 600 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 70V40h40V22h30v18h30V8h44v32h26V28h36v42zM206 70V34h34V14h40v20h30v36zM330 70V44h24V18h48v26h28V30h36v40zM466 70V24h44v16h34V8h36v62z" fill="#1d5c43"/><rect y="66" width="600" height="4" fill="#f4f5f1"/></svg>
+</header>
+<div class="wrap">
+{{ p.actions() }}
+{{ p.services(cls="listings", extra=2) }}
+{{ p.about() }}
+{{ p.hours() }}
+{{ p.photos() }}
+{{ p.enquiry() }}
+{{ p.footer() }}
+</div>
+{% endblock %}
