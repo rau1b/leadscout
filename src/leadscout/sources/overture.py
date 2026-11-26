@@ -11,19 +11,22 @@ from leadscout.sources.geo import BBox
 
 
 def download(bbox: BBox):
-    """Download every place in the box as an Arrow table (only the matching files are fetched)."""
-    reader = core.record_batch_reader("place", bbox=bbox)
+    """Download every place in the box as an Arrow table (only the matching files are fetched). Returns (table, release)."""
+    release = core.get_latest_release()  # asked once, so the release we record is the one we read
+    reader = core.record_batch_reader("place", bbox=bbox, release=release)
     if reader is None:
         raise RuntimeError("Overture returned no data for this area.")
-    return reader.read_all()
+    return reader.read_all(), release
 
 
 QUERY = """
 select
     id,
     names.primary as name,
+    basic_category,
     taxonomy.primary as category,
     array_to_string(taxonomy.hierarchy, ' > ') as category_path,
+    coalesce(taxonomy.alternates, []) as category_alternates,
     coalesce(websites, []) as websites,
     coalesce(phones, []) as phones,
     coalesce(emails, []) as emails,
@@ -44,15 +47,18 @@ where names.primary is not null
 
 
 def matches(row: dict, terms: list[str]) -> bool:
+    """Does this place belong to the searched business types? Looks at Overture's plain basic_category first, then
+    the taxonomy (primary, hierarchy, alternates), then the name, which catches places filed under a broad category."""
     if not terms:
         return True
-    hay = " ".join(str(row.get(k) or "") for k in ("category", "category_path", "name")).lower()
-    return any(t in hay for t in terms)
+    fields = [row.get("basic_category"), row.get("category"), row.get("category_path"),
+              " ".join(row.get("category_alternates") or []), row.get("name")]
+    return any(t in str(field or "").lower() for field in fields for t in terms)
 
 
 def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confidence: float = 0.5, city: str | None = None) -> tuple[int, int]:
     """Store matching places. Returns (places in area, places stored)."""
-    places = download(bbox)  # noqa: F841 (read by duckdb below)
+    places, release = download(bbox)  # noqa: F841 (places is read by duckdb below)
     duck = duckdb.connect()
     duck.register("places", places)
     cur = duck.execute(QUERY, [min_confidence])
@@ -70,9 +76,13 @@ def ingest(con, bbox: BBox, categories: list[str], area_label: str, min_confiden
             {
                 "id": r["id"],
                 "source": "overture",
+                "source_id": r["id"],  # the GERS id, stable across Overture releases
+                "release": release,
                 "name": r["name"],
+                "basic_category": r["basic_category"],
                 "category": r["category"],
                 "category_path": r["category_path"],
+                "category_alternates": list(r["category_alternates"]),
                 "address": r["address"],
                 "locality": r["locality"],
                 "postcode": r["postcode"],

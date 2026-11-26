@@ -122,7 +122,7 @@ def ctx(request: Request, **extra) -> dict:
 
 
 LEAD_SQL = """
-select b.id, b.name, b.category, b.locality, b.area, b.city, b.address, b.website, b.phone, b.phone_type, b.socials, b.source,
+select b.id, b.name, b.category, b.basic_category, b.locality, b.area, b.city, b.address, b.website, b.phone, b.phone_type, b.socials, b.source,
        a.site_class, a.fetch_error, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year, a.generator,
        a.has_whatsapp, a.has_tel, a.final_url,
        l.score, l.reasons, l.status, l.email, l.updated_at,
@@ -427,7 +427,9 @@ def find_page(request: Request, error: str = ""):
         request,
         "find.html",
         ctx(request, nav="find", areas=searches.searched_areas(con), types=searches.BUSINESS_TYPES,
-            cities=searches.CITIES, error=error, has_key=bool(config.load().google_api_key)),
+            cities=searches.CITIES, error=error, has_key=bool(config.load().google_api_key),
+            basic_categories=[r[0] for r in con.execute(
+                "select distinct basic_category from businesses where basic_category is not null order by 1")]),
     )
 
 

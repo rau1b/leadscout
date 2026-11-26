@@ -33,7 +33,9 @@
     </fieldset>
     <div class="field">
       <label for="extra">Something else <span class="opt">optional</span></label>
-      <input id="extra" type="text" name="extra" placeholder="e.g. pet shop, driving school">
+      <input id="extra" type="text" name="extra" placeholder="e.g. pet shop, driving school"{% if basic_categories %} list="basic-categories"{% endif %}>
+      {% if basic_categories %}<datalist id="basic-categories">{% for c in basic_categories %}<option value="{{ c }}">{{ c|nicecat }}</option>{% endfor %}</datalist>
+      <p class="hint">Start typing to pick a type already found in your searches.</p>{% endif %}
     </div>
     <div class="bar">
       <button class="btn">Find businesses</button>

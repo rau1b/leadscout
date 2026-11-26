@@ -62,7 +62,7 @@ def site_need(a) -> tuple[int, list[str]]:
 
 # Which copy of a duplicated place to keep: the one furthest along with you. Opted-out, bounced and lost
 # rank high too, so their twin listing never gets pitched instead.
-STATUS_RANK = {"won": 9, "replied": 8, "contacted": 7, "opted_out": 7, "bounced": 7, "lost": 7, "approved": 5,
+STATUS_RANK = {"won": 9, "replied": 8, "meeting": 8, "proposal": 8, "contacted": 7, "opted_out": 7, "bounced": 7, "lost": 7, "approved": 5,
                "drafted": 4, "hidden": 3, "new": 1, "excluded": 0}
 SAME_PLACE_KM = 15  # the same name this close is the same business (branches get one pitch, not two)
 
@@ -108,7 +108,7 @@ class DuplicateFinder:
 
 
 # Leads whose email address is in use: rescoring never clears it.
-IN_CONTACT = ("approved", "contacted", "replied", "won")
+IN_CONTACT = ("approved", "contacted", "replied", "meeting", "proposal", "won")
 
 
 def chain_domains(con, min_count: int = 3) -> set[str]:
