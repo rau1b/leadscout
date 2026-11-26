@@ -1,52 +1,18 @@
 # Contracts between the tracks
 
-What one track writes and the other reads. The owner may add fields. Renaming or removing one, or changing what it means, needs the other person's OK and an update to this file in the same PR. Tracks are described in [TRACKS.md](TRACKS.md).
+The interfaces between Find & qualify (Jason) and Show & close (rau1b); see [TRACKS.md](TRACKS.md). This table is copied word for word from both plans in [docs/plans/](plans/). C2, C3 and C4 are planned: not built yet, so the other side uses the fallback.
 
-## `demos` table (owned by rau1b, Show & close)
+| # | Contract | Owner | The other side uses it to | Fallback if the owner hasn't built it yet |
+| --- | --- | --- | --- | --- |
+| C1 | `demos` table: business_id, slug, template, url (null until published), built_at, expires_at, first_viewed_at, view_count. Cascades on business delete. | rau1b (exists, PR #6) | Jason: put the demo link in a pitch only when `url` is set and `expires_at` is in the future; treat `first_viewed_at` as a buying signal in scoring and follow-ups | No row or null `url`: no link, no signal |
+| C2 (planned) | `audits.screenshot_path`: mobile screenshot image (JPEG from PageSpeed, or PNG) of the lead's current site, path relative to the data folder, may be null | Jason (Phase 1, Step 4) | rau1b: the "before" half of before/after images | Null or missing column: rau1b takes his own screenshot with Playwright |
+| C3 (planned) | `businesses.basic_category`: Overture's plain category label | Jason (Phase 1, Step 1) | rau1b: choose the demo template | Missing column or null: use `category` and `category_path` |
+| C4 (planned) | One-click unsubscribe. Jason's emails carry `List-Unsubscribe` with a mailto always, plus `<[preview] base_url>/u/<token>` when that setting exists. Jason owns table `unsubscribe_tokens(token primary key, business_id, created_at)` and `outreach.unsubscribe.resolve(con, token) -> business_id or None`. | Jason (Phase 3, Step 2) | rau1b: the preview host's `/u/<token>` route stores tokens; `leadscout demos sync` calls `resolve()` then `compliance.opt_out_business(con, business_id, "unsubscribe link")` | If the import fails, sync keeps the tokens queued and logs it. No https links are sent before Jason builds it, so none arrive |
+| C5 | `compliance.opt_out_business(con, business_id, reason)`: opts out that lead's email and phone, sets status `opted_out` (never for a won lead) | Jason (Phase 1, Step 0) | rau1b: unsubscribes and "stop" clicks from the preview host | None needed after Step 0 |
+| C6 | Lead statuses. Jason sets new, drafted, approved, contacted, replied, send_failed, opted_out, bounced, excluded, hidden. rau1b sets meeting, proposal, won, lost, and only from replied, meeting or proposal. Jason's code never moves a lead out of meeting, proposal, won or lost, except to opted_out or bounced. Replies keep being checked for meeting and proposal leads. | both | Shared lead flow | rau1b adds `meeting` and `proposal` to `db.STATUSES` (one line); Jason's Step 0 makes reply checking include them |
+| C7 | Events (`db.log_event`). Jason writes: audit_done, findings_updated, pitch_drafted, pitch_sent, reply_received, reply_labelled, opted_out, settings_changed, visit_logged, whatsapp_opened. rau1b writes: demo_built, demo_published, demo_viewed, demo_expired, proposal_sent, proposal_accepted, invoice_sent, invoice_paid, stage_changed, task_done. Actor is system, dashboard, cli or preview-host. `data_json` never holds an email, phone number or message text. | both | Timeline and analytics | An unknown event type is ignored by readers |
+| C8 | Forget. `compliance.forget()` deletes businesses; the `demos` rows cascade; rau1b's single `demos.remove_orphans(con)` call inside it removes local pages; rau1b's next sync takes forgotten or expired demos off the preview host | Jason (function), rau1b (the one call, sync) | Delete-on-request reaches every copy | None |
+| C9 | Config sections. Jason: sender, pitch, sending, scoring, retention, backups, enrich, outreach. rau1b: preview, demos, billing. | both | Settings and defaults | Missing section: code uses defaults |
+| C10 | Dashboard: each new area is its own `web/<area>.py`, one import line in `app.py`, one nav link in `base.html`. Migrations: next free number at merge time. | both | No clashes in shared files | Not applicable |
 
-Planned; not in the schema yet. It arrives as a migration from the Show & close track.
-
-| Column | Meaning |
-|---|---|
-| `business_id` | `references businesses(id) on delete cascade`, so `forget` and the retention purge remove demos too |
-| `slug` | the demo's path on the preview host |
-| `template` | which demo template was used |
-| `url` | the full preview link put in a pitch |
-| `built_at` | when it was built (ISO time, IST) |
-| `expires_at` | when the preview host takes it down |
-| `first_viewed_at` | first time the business opened it, or null |
-| `view_count` | how many times it was opened |
-
-- **Readers:** Jason's pitch and scoring code may use a demo's `url` and views, but only if the table exists. Check with `select 1 from sqlite_master where type = 'table' and name = 'demos'`. Find & qualify must keep working without it.
-- **Privacy:** a demo page holds the business's details on the preview host. When `leadscout forget` deletes a business, its demo pages must come off the preview host too, not only out of the table. Show & close provides that.
-
-## `audits.screenshot_path` (owned by Jason, Find & qualify)
-
-Planned; not in the schema yet. It arrives as a migration from the Find & qualify track.
-
-- The mobile "before" screenshot of the business's current site: a path under `data/`, or null when there's no site or the capture failed. Readers must handle null.
-- It goes when the business goes: the audit row is cascade-deleted, and the file is deleted with it.
-
-## Preview host → LeadScout (the demos sync)
-
-Unsubscribes and views recorded on the preview host come back through one demos sync function, owned by Show & close. For each item it:
-
-- **Unsubscribe:** calls `compliance.opt_out(con, value, "unsubscribe link")`. This is the only way it records an opt-out. It never writes to `suppression` or `leads.status` directly, so the strongest-reason rule and the opt-out marking stay in one place (Find & qualify).
-- **View:** updates `demos.first_viewed_at` and `view_count`, and logs `demo_viewed`.
-- Logs every change with `db.log_event(con, type, business_id, actor="preview-host", ...)`.
-
-## Events
-
-Written with `db.log_event(con, type, business_id=None, actor="system", **data)`.
-
-- **Names** are snake_case, in the past tense.
-- **`data`** never holds contact details (emails, phone numbers) or message text. Use ids and counts. Events tied to a business are deleted with it, but events with no business are kept.
-- **`actor`** is one of `system`, `dashboard`, `cli`, `preview-host`.
-
-| Writer | Event types |
-|---|---|
-| Find & qualify (Jason) | `audit_done`, `pitch_drafted`, `pitch_sent`, `reply_received`, `reply_labelled`, `opted_out` |
-| Show & close (rau1b) | `demo_built`, `demo_viewed`, `demo_expired`, `proposal_sent`, `invoice_sent`, `invoice_paid` |
-| Shared | `settings_changed` (the Settings page; data: the changed key names only) |
-
-Only `settings_changed` is written today. To add a type, add it to this table in the same PR.
+Changing a contract is the only time you must message rau1b first. Everything else, you decide.

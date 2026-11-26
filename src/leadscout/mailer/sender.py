@@ -188,7 +188,7 @@ def check_replies(con, cfg, gmail) -> dict:
         """select l.business_id, l.email, l.status, o.thread_id, b.phone from leads l
            join businesses b on b.id = l.business_id
            join outreach o on o.id = (select max(id) from outreach where business_id = l.business_id and channel = 'email')
-           where l.status in ('contacted', 'replied', 'won', 'send_failed')"""
+           where l.status in ('contacted', 'replied', 'meeting', 'proposal', 'won', 'send_failed')"""  # contract C6
     ).fetchall()
     for r in rows:
         for m in gmail.incoming(r["thread_id"], cfg.sender["email"]):
@@ -202,7 +202,8 @@ def check_replies(con, cfg, gmail) -> dict:
             counts[m["kind"]] += 1
             if r["status"] == "won":
                 continue  # a paying customer: never auto-opt-out; the saved reply shows it, you decide
-            # A first answer moves the lead on; a later "no" always wins.
+            # A first answer moves the lead on; a later "no" always wins. Meeting and proposal (Show & close, C6) only
+            # ever leave for opted_out or bounced.
             if m["kind"] in ("opted_out", "bounced") or r["status"] in ("contacted", "send_failed"):
                 con.execute("update leads set status = ?, updated_at = ? where business_id = ?", (m["kind"], now(), r["business_id"]))
             if m["kind"] in ("opted_out", "bounced"):

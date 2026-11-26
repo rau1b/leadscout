@@ -77,17 +77,37 @@ def lead_is_suppressed(con, business_id: str) -> bool:
     return bool(r) and is_opted_out(con, r["email"], r["phone"])
 
 
-def opt_out(con, value: str, reason: str) -> int:
-    """Suppress an email or phone and mark every lead holding it as opted out. Returns leads updated."""
+def opt_out(con, value: str, reason: str, keep_won: bool = False) -> int:
+    """Suppress an email or phone and mark every lead holding it as opted out. Returns leads updated.
+    keep_won: leave a won lead's status alone (for automatic opt-outs; a person may still opt a customer out)."""
     suppress(con, value, reason)
     key = normalize(value)
+    not_won = " and status != 'won'" if keep_won else ""
     cur = con.execute(
-        """update leads set status = 'opted_out', updated_at = ?
-           where lower(email) = ? or business_id in (select id from businesses where phone = ?)""",
+        f"""update leads set status = 'opted_out', updated_at = ?
+           where (lower(email) = ? or business_id in (select id from businesses where phone = ?)){not_won}""",
         (now(), key, key),
     )
     con.commit()
     return cur.rowcount
+
+
+def opt_out_business(con, business_id: str, reason: str, actor: str = "system") -> bool:
+    """Contract C5: opt out this lead's email and the business phone, and mark the lead opted_out (never a won one).
+    For unsubscribes and "stop" clicks from the preview host. False if there's no such business."""
+    from leadscout.db import log_event
+
+    r = con.execute("select b.phone, l.email from businesses b left join leads l on l.business_id = b.id where b.id = ?",
+                    (business_id,)).fetchone()
+    if r is None:
+        return False
+    for value in (r["email"], r["phone"]):
+        if value:
+            opt_out(con, value, reason, keep_won=True)
+    con.execute("update leads set status = 'opted_out', updated_at = ? where business_id = ? and status != 'won'", (now(), business_id))
+    log_event(con, "opted_out", business_id, actor=actor, reason=reason)  # no email or phone in events (C7)
+    con.commit()
+    return True
 
 
 def forget(con, value: str) -> tuple[int, list[str]]:
