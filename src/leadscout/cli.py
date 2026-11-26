@@ -105,6 +105,26 @@ def score():
 
 
 @app.command()
+def enrich(area: str = typer.Option(None, help="Only leads found in this area, e.g. \"Panaji, Goa\".")):
+    """Match your best leads to Google Places (only the place id is kept), then rescore them. Off until enabled."""
+    from leadscout.enrich import places
+    from leadscout.scoring import score_all
+
+    cfg, con = _ctx()
+    if not places.enabled(cfg):
+        typer.echo("Google Places is off. Turn it on under Settings > Data (needs GOOGLE_API_KEY in .env).")
+        raise typer.Exit(1)
+    found = places.match(con, cfg, area=area)
+    if found["matched"]:
+        score_all(con, cfg)
+    typer.echo(f"Looked up {found['searched']} lead(s); {found['matched']} matched one Google place clearly. "
+               f"Places requests this month: {places.used_this_month(con)}/{cfg.enrich['monthly_request_cap']}.")
+    if found["stopped"]:
+        typer.echo(found["stopped"], err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
 def run(category: str, area: str = typer.Option(None), bbox: str = typer.Option(None), pagespeed: bool = typer.Option(True)):
     """find + audit + score in one go."""
     find(category, area, bbox, 0.5)

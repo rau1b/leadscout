@@ -15,6 +15,7 @@ It runs on one laptop and costs nothing.
 | Your own lists | CSV import (`leadscout import-csv`) | Free |
 | Website checks | httpx + BeautifulSoup | Free |
 | Speed test | Google PageSpeed Insights API, mobile | Free; needs a free API key (no card) for real volume |
+| Google reviews (optional, off) | Google Places API (New): place id stored, details fetched live | Off by default; capped per month |
 | Email check | DNS MX lookup (dnspython) | Free |
 | Phone numbers | phonenumbers (+91 format, mobile vs landline) | Free |
 | Storage | SQLite file `data/leadscout.db` (stdlib sqlite3) | Free |
@@ -32,6 +33,7 @@ leadscout find "dental,interior design" --area "Kukatpally, Hyderabad"
 leadscout audit                  # classify site, fetch, HTML checks, PageSpeed
 leadscout pagespeed              # re-run PageSpeed later (e.g. after adding a key)
 leadscout score                  # 0-100 score, reasons, best deliverable email, dedupe, chains out
+leadscout enrich [--area ...]    # optional: match the best leads on Google Places (see below)
 leadscout pitch --templates 50   # or: --prepare 50, then /pitch-today in Claude Code, then --import
 leadscout serve                  # dashboard: review, edit, approve
 leadscout gmail-login            # one time
@@ -50,6 +52,19 @@ Website classes: none, social_only, directory_only, dead_google_site (business.s
 ## Searching by city
 
 The dashboard's **Find leads** page queues area searches (city + optional neighbourhood + business types) and runs find, audit and score in a background thread, one search at a time (`searches.py`). Each business stores its `area` and `city`; Leads and Pitches filter by area. A neighbourhood search covers 4 to 7 km; a city without a neighbourhood covers about 13 km around its centre. Places mapped as a single point are widened automatically.
+
+## Google Places (optional)
+
+Off until you turn it on. When on, the best leads get Google's review count and open status in their score, and the lead page gets a **Show Google details** button (rating, reviews, opening hours), shown live with "Data from Google Maps" and never saved.
+
+Google's terms allow keeping only a place's `place_id`. So LeadScout stores just that id (in `source_records`, source `google`). Ratings, review counts, phone numbers, websites, hours and coordinates from Google are fetched when needed and dropped; a test scans every table to check. The score keeps only its own reason, such as "Well reviewed on Google", never Google's numbers.
+
+To turn it on:
+1. In Google Cloud console, on the project that has your PageSpeed key, enable **Places API (New)**. The key goes in `.env` as `GOOGLE_API_KEY`, as for PageSpeed.
+2. Also in Cloud console, set a quota on Places API (New), for example requests per day, and check Google's current Places pricing. LeadScout's own cap below is a second guard, not a replacement.
+3. In **Settings > Data**, tick "Look up review counts and open status on Google". Set the monthly request cap (default 1,000) and the lowest score to look up (default 50). Settings also shows this month's count.
+
+How it works: after each area search is scored, leads at or above the minimum score with no Google id get one Text Search (IDs only: the name and locality, biased to 500 m around our coordinates). The id is kept only when exactly one place comes back. Leads without coordinates (most CSV imports) are skipped. Then scoring fetches Place Details (rating, review count, open status, hours) for matched leads it rescores, in memory only. A place Google marks closed for good is excluded; 20 or more reviews adds 5 points. Every request counts towards `[enrich] monthly_request_cap`; at the cap, lookups stop until the 1st and the search, the CLI and the lead page say so. `leadscout enrich` runs the matching by hand.
 
 ## Sending safety
 

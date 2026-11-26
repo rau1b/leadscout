@@ -26,7 +26,12 @@ INTS = {
     "scoring.min_score": ("scoring", "min_score", 0, 100),
     "retention.purge_uncontacted_after_days": ("retention", "purge_uncontacted_after_days", 1, None),
     "backups.keep_days": ("backups", "keep_days", 1, None),
+    "enrich.monthly_request_cap": ("enrich", "monthly_request_cap", 1, None),
+    "enrich.min_score_to_enrich": ("enrich", "min_score_to_enrich", 0, 100),
 }
+# Sections that may be missing from config.toml: the form shows their defaults, and a save writes them only
+# once they differ, so saving other settings never adds them.
+OPTIONAL = {"enrich"}
 WARMUP = ["week 1", "week 2", "week 3 onward"]
 
 
@@ -41,8 +46,10 @@ def current() -> dict:
 
 def form_values(raw: dict) -> dict:
     """The strings and lists the form shows for this config."""
+    defaults = {"enrich": config.Config(raw).enrich}
     v = {f"{s}.{k}": str(_get(raw, s, k)) for s, k in TEXT}
-    v |= {name: str(_get(raw, s, k)) for name, (s, k, _, _) in INTS.items()}
+    v |= {name: str(_get(raw, s, k, defaults.get(s, {}).get(k, ""))) for name, (s, k, _, _) in INTS.items()}
+    v["enrich.places_enabled"] = bool(defaults["enrich"]["places_enabled"])
     sc = raw.get("sending", {})
     v |= {
         "sending.window_start": sc.get("window_start", ""),
@@ -151,6 +158,10 @@ def parse(form, base: dict) -> tuple[dict, dict]:
 
     put("scoring", "high_value", _lines(form.get("scoring.high_value") or ""))
     put("scoring", "excluded", _lines(form.get("scoring.excluded") or ""))
+    put("enrich", "places_enabled", form.get("enrich.places_enabled") == "1")
+    for section in OPTIONAL:
+        if section not in base and raw.get(section) == getattr(config.Config({}), section):
+            raw.pop(section)  # still the defaults: leave the section out of config.toml
     return raw, errors
 
 

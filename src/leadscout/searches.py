@@ -117,6 +117,7 @@ def area_box(s):
 
 def _run(con, s) -> None:
     from leadscout.audit import audit_pending
+    from leadscout.enrich import places as google_places
     from leadscout.scoring import score_all
     from leadscout.sources import overture
 
@@ -139,11 +140,18 @@ def _run(con, s) -> None:
     audit_pending(con, cfg.google_api_key, bool(cfg.google_api_key), None, progress)
     _update(con, sid, message="Scoring leads and checking email addresses")
     score_all(con, cfg)
+    google = ""
+    if google_places.enabled(cfg):
+        _update(con, sid, message="Matching the best leads on Google")
+        found = google_places.match(con, cfg, area=s["label"])
+        if found["matched"]:
+            score_all(con, cfg)  # again, now with Google's review count and open status for the new matches
+        google = f". {found['stopped']}" if found["stopped"] else ""
     leads = con.execute(
         "select count(*) from leads l join businesses b on b.id = l.business_id where b.area = ? and l.status != 'excluded'",
         (s["label"],),
     ).fetchone()[0]
-    _update(con, sid, status="done", message=f"{leads} leads ready", finished_at=now())
+    _update(con, sid, status="done", message=f"{leads} leads ready{google}", finished_at=now())
 
 
 def _worker() -> None:

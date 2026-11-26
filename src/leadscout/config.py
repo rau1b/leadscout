@@ -62,6 +62,10 @@ class Config:
         return {"keep_days": 14} | self.raw.get("backups", {})
 
     @property
+    def enrich(self) -> dict:
+        return {"places_enabled": False, "monthly_request_cap": 1000, "min_score_to_enrich": 50} | self.raw.get("enrich", {})
+
+    @property
     def google_api_key(self) -> str:
         return os.environ.get("GOOGLE_API_KEY", "")
 

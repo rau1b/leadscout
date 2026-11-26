@@ -113,6 +113,7 @@
         {% if r.copyright_year %}<dt>Footer year</dt><dd>{{ r.copyright_year }}</dd>{% endif %}
         <dt>Source</dt><dd>{{ 'Overture Maps' if r.source == 'overture' else 'Your import' }}</dd>
       </dl>
+      {% include "_google_button.html" %}
       {% if r.status in ('new', 'drafted', 'approved', 'excluded') %}
       <form method="post" action="/leads/{{ r.id }}/hide" class="bar">
         <button class="btn quiet small">Wrong category, hide</button>
