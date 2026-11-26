@@ -132,7 +132,7 @@ def test_migration_another_process_applied_is_skipped(tmp_path, monkeypatch):
     from leadscout import backups
 
     path = tmp_path / "t.db"
-    one, two = tmp_path / "0001_t.sql", tmp_path / "0002_t.sql"
+    one, two = tmp_path / "0001_one.sql", tmp_path / "0002_two.sql"
     one.write_text("create table t (a);", encoding="utf-8")
     two.write_text("alter table t add column b;", encoding="utf-8")  # fails if run twice
     monkeypatch.setattr(db, "migrations", lambda: [(1, one)])
@@ -160,3 +160,65 @@ def test_migration_numbers_are_unique_and_run_1_to_n():
     numbers = [int(name.split("_")[0]) for name in files]
     assert all(name[:4].isdigit() and name[4] == "_" for name in files), files  # NNNN_name.sql, or connect() would skip it
     assert numbers == list(range(1, len(files) + 1)), files
+
+
+def _files(tmp_path, monkeypatch, *names_and_sql):
+    """Point migrations() at these files, in number order, as a fresh checkout of the repo would have them."""
+    paths = []
+    for name, sql in names_and_sql:
+        p = tmp_path / "mig" / name
+        p.parent.mkdir(exist_ok=True)
+        p.write_text(sql, encoding="utf-8")
+        paths.append(p)
+    monkeypatch.setattr(db, "migrations", lambda: sorted((int(p.name.split("_")[0]), p) for p in paths))
+    db._ready.clear()
+
+
+def _names(con):
+    return sorted(r[0] for r in con.execute("select name from schema_migrations"))
+
+
+def test_a_renumbered_migration_is_not_run_again(tmp_path, monkeypatch):
+    path = tmp_path / "t.db"
+    _files(tmp_path, monkeypatch, ("0001_base.sql", "create table t (a);"), ("0002_demos.sql", "alter table t add column demo;"))
+    db.connect(path).close()
+    # The other track's migration took number 2 first, so this one became 0003 after merging main.
+    for f in (tmp_path / "mig").iterdir():
+        f.unlink()
+    _files(tmp_path, monkeypatch, ("0001_base.sql", "create table t (a);"), ("0002_tags.sql", "create table tags (x);"),
+           ("0003_demos.sql", "alter table t add column demo;"))  # running it again would fail: duplicate column
+    con = db.connect(path)
+    assert _names(con) == ["base", "demos", "tags"] and _version(con) == 3
+    assert [r[1] for r in con.execute("pragma table_info(t)")] == ["a", "demo"]
+
+
+def test_a_lower_numbered_migration_added_later_is_still_applied(tmp_path, monkeypatch):
+    path = tmp_path / "t.db"
+    _files(tmp_path, monkeypatch, ("0001_base.sql", "create table t (a);"), ("0003_late.sql", "create table late (x);"))
+    db.connect(path).close()
+    _files(tmp_path, monkeypatch, ("0001_base.sql", "create table t (a);"), ("0002_early.sql", "create table early (x);"),
+           ("0003_late.sql", "create table late (x);"))
+    con = db.connect(path)
+    assert _names(con) == ["base", "early", "late"]
+    assert con.execute("select count(*) from early").fetchone()[0] == 0
+    assert _version(con) == 3  # the highest number applied; never lowered
+
+
+def test_existing_databases_are_marked_by_name_up_to_their_user_version(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "t.db"
+    old = sqlite3.connect(path)  # migrated by number before schema_migrations existed: version 2
+    for _, f in db.migrations()[:2]:
+        old.executescript(f.read_text(encoding="utf-8"))
+    old.execute("pragma user_version = 2")
+    old.close()
+    con = db.connect(path)
+    assert _names(con) == sorted(db.migration_name(p) for _, p in db.migrations())
+    assert _version(con) == db.migrations()[-1][0]
+
+
+def test_migration_names_are_unique():
+    """Names are what schema_migrations records, so two files must never share one, whatever their numbers."""
+    names = [db.migration_name(p) for _, p in db.migrations()]
+    assert len(names) == len(set(names)), names
