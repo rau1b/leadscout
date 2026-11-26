@@ -56,46 +56,93 @@ def file_of(con) -> Path:
 
 
 def migrations() -> list[tuple[int, Path]]:
-    """The numbered .sql files, in order: 0001_baseline.sql is version 1."""
+    """The numbered .sql files, in order: 0001_baseline.sql is number 1."""
     return sorted((int(p.name.split("_")[0]), p) for p in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+
+
+def migration_name(p: Path) -> str:
+    """The file name without its number: "0004_demos.sql" -> "demos". Applied migrations are recorded by this name,
+    so renumbering a file after a clash between the two tracks never re-runs or skips it."""
+    return p.stem.split("_", 1)[1]
+
+
+def _has_table(con, name: str) -> bool:
+    return con.execute("select 1 from sqlite_master where type = 'table' and name = ?", (name,)).fetchone() is not None
 
 
 def _has_tables(con) -> bool:
     return con.execute("select 1 from sqlite_master where type = 'table'").fetchone() is not None
 
 
+def _applied(con) -> set[str] | None:
+    """Names of the applied migrations, or None before schema_migrations exists (then numbers up to user_version count)."""
+    if not _has_table(con, "schema_migrations"):
+        return None
+    return {r[0] for r in con.execute("select name from schema_migrations")}
+
+
 def _upgrade(con, path: Path) -> None:
-    """Apply pending migrations in order, each in its own transaction; `pragma user_version` is the last one applied."""
+    """Apply every migration whose name isn't in schema_migrations, in number order, each in its own transaction.
+    `pragma user_version` still holds the highest number applied, for older code and backup names."""
     from leadscout import backups
 
+    files = migrations()
     version = con.execute("pragma user_version").fetchone()[0]
-    pending = [(n, p) for n, p in migrations() if n > version]
-    if not pending:
+    applied = _applied(con)
+    seeded = applied is not None
+    if applied is None:
+        applied = {migration_name(p) for n, p in files if n <= version}
+    pending = [(n, p) for n, p in files if migration_name(p) not in applied]
+    if seeded and not pending:
         return
-    if _has_tables(con):
+    if pending and _has_tables(con):
         backups.backup_now(con, path, f"v{version}")
     # autocommit=True: we control the transactions, and executescript() won't commit one behind our back.
     mig = sqlite3.connect(path, timeout=30, autocommit=True)
     try:
-        for n, p in pending:
-            mig.execute("begin immediate")  # takes the write lock, so another process can't migrate in between
-            try:
-                current = mig.execute("pragma user_version").fetchone()[0]
-                if current < n:  # else another process applied it while we waited; alter table can't run twice
-                    if current == 0 and _has_tables(mig):
-                        # Made before numbered migrations: _migrate() adds the columns 0001 already has, then 0001's
-                        # "create table if not exists" adds only the tables this file lacks, as the old schema script did.
-                        # Its commit() calls do nothing on an autocommit=True connection, so it stays in this transaction.
-                        _migrate(mig)
-                    mig.executescript(p.read_text(encoding="utf-8"))
-                    mig.execute(f"pragma user_version = {n}")
-                mig.execute("commit")
-            except BaseException:
-                if mig.in_transaction:
-                    mig.execute("rollback")
-                raise
+        # BEGIN IMMEDIATE takes the write lock, so another process can't migrate in between; each step re-checks inside it.
+        _in_transaction(mig, lambda: _seed(mig, files))
+        for _, p in pending:
+            _in_transaction(mig, lambda p=p: _apply(mig, p, files))
     finally:
         mig.close()
+
+
+def _in_transaction(mig, step) -> None:
+    mig.execute("begin immediate")
+    try:
+        step()
+        mig.execute("commit")
+    except BaseException:
+        if mig.in_transaction:
+            mig.execute("rollback")
+        raise
+
+
+def _seed(mig, files) -> None:
+    """First run with schema_migrations: the files up to user_version were applied by number, so record them by name."""
+    if _has_table(mig, "schema_migrations"):
+        return
+    mig.execute("create table schema_migrations (name text primary key, applied_at text not null)")
+    version = mig.execute("pragma user_version").fetchone()[0]
+    mig.executemany("insert into schema_migrations (name, applied_at) values (?, ?)",
+                    [(migration_name(p), now()) for n, p in files if n <= version])
+
+
+def _apply(mig, p: Path, files) -> None:
+    name = migration_name(p)
+    if mig.execute("select 1 from schema_migrations where name = ?", (name,)).fetchone():
+        return  # another process applied it while we waited; alter table can't run twice
+    if name == "baseline" and _has_table(mig, "businesses"):
+        # Made before numbered migrations: _migrate() adds the columns 0001 already has, then 0001's
+        # "create table if not exists" adds only the tables this file lacks, as the old schema script did.
+        # Its commit() calls do nothing on an autocommit=True connection, so it stays in this transaction.
+        _migrate(mig)
+    mig.executescript(p.read_text(encoding="utf-8"))
+    mig.execute("insert into schema_migrations (name, applied_at) values (?, ?)", (name, now()))
+    # The highest current number among applied files, so code that still counts by number never re-runs one.
+    done = {r[0] for r in mig.execute("select name from schema_migrations")}
+    mig.execute(f"pragma user_version = {max(m for m, f in files if migration_name(f) in done)}")
 
 
 def _migrate(con) -> None:

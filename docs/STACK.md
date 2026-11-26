@@ -61,11 +61,11 @@ The dashboard's **Find leads** page queues area searches (city + optional neighb
 
 ## Database migrations
 
-The schema lives in numbered SQL files in `src/leadscout/migrations/`. `db.connect()` applies the ones the database hasn't had yet, once per process, each in its own transaction, and records the last one in `pragma user_version`.
+The schema lives in numbered SQL files in `src/leadscout/migrations/`. A database records each migration it has had by name, the file name without its number (`0004_demos.sql` is `demos`), in the `schema_migrations` table. `db.connect()` applies every file whose name isn't recorded yet, in number order, once per process, each in its own transaction. So renumbering a file after the two tracks clash never runs it twice, and a file that lands with a lower number than one already applied still runs. `pragma user_version` keeps the highest number applied, for older code and for backup names.
 
-To change the schema, add the next file, for example `0003_add_lead_tags.sql`, holding plain SQL (`create table`, `alter table ... add column`, `create index`). Never edit a migration that has already shipped; write a new one. Add a test in `tests/test_migrations.py` if the migration moves data.
+To change the schema, add the next file, for example `0006_add_lead_tags.sql`, holding plain SQL (`create table`, `alter table ... add column`, `create index`). The name after the number must be new and must never change. Never edit a migration that has already shipped; write a new one. Add a test in `tests/test_migrations.py` if the migration moves data.
 
-A database from before numbered migrations (version 0) gets the old `_migrate()` fix-ups once, in the same transaction as `0001`, and then becomes version 1. Each migration runs under `BEGIN IMMEDIATE` and re-reads `user_version` inside it, so when two processes start together only one of them applies it.
+The first time this code opens a database migrated before `schema_migrations` existed, it records the files up to its `user_version` as applied, by name. A database from before numbered migrations (version 0) gets the old `_migrate()` fix-ups once, in the same transaction as `0001_baseline`. Each migration runs under `BEGIN IMMEDIATE` and checks `schema_migrations` inside it, so when two processes start together only one of them applies it.
 
 ## Backups
 
