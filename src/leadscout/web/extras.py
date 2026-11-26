@@ -25,7 +25,7 @@ join replies r on r.gmail_id = (select gmail_id from replies where business_id =
 @app.get("/replies", response_class=HTMLResponse)
 def replies_page(request: Request, msg: str = ""):
     con = db.connect()
-    rows = con.execute(REPLY_SQL + " where r.kind = 'replied' or l.status in ('replied', 'won') order by r.received_at desc").fetchall()
+    rows = con.execute(REPLY_SQL + " where r.kind = 'replied' or l.status in ('replied', 'meeting', 'proposal', 'won') order by r.received_at desc").fetchall()
     return tpl.TemplateResponse(
         request, "replies.html", ctx(request, nav="replies", rows=rows, msg=msg, last_check=db.get_meta(con, "last_inbox_check"))
     )
