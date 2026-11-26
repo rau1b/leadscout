@@ -104,6 +104,7 @@ tpl.env.filters["nicecat"] = lambda c: (c or "").replace("_", " ").capitalize()
 tpl.env.filters["fromjson"] = lambda s: __import__("json").loads(s) if s else {}
 tpl.env.filters["hm"] = lambda s: s[11:16] if s else ""
 tpl.env.filters["day"] = lambda s: datetime.fromisoformat(s).strftime("%d %b") if s else ""
+tpl.env.filters["longdate"] = lambda s: datetime.fromisoformat(s).strftime("%d %b %Y") if s else ""
 
 
 def ctx(request: Request, **extra) -> dict:
@@ -124,7 +125,7 @@ def ctx(request: Request, **extra) -> dict:
 LEAD_SQL = """
 select b.id, b.name, b.category, b.basic_category, b.locality, b.area, b.city, b.address, b.website, b.phone, b.phone_type, b.socials, b.source,
        a.site_class, a.fetch_error, a.perf_score, a.lcp_s, a.https, a.viewport, a.copyright_year, a.generator,
-       a.has_whatsapp, a.has_tel, a.final_url,
+       a.has_whatsapp, a.has_tel, a.final_url, a.domain_registered, a.domain_expires, a.cert_expires, a.tech, a.cms_version,
        l.score, l.reasons, l.status, l.email, l.updated_at,
        p.subject, p.body, p.whatsapp, p.source as pitch_source, p.approved
 from leads l join businesses b on b.id = l.business_id join audits a on a.business_id = b.id

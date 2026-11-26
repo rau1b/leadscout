@@ -30,7 +30,8 @@ Measured on Kukatpally, Hyderabad (21 Nov 2026): 7,644 places in the area; 80% h
 
 ```
 leadscout find "dental,interior design" --area "Kukatpally, Hyderabad"
-leadscout audit                  # classify site, fetch, HTML checks, PageSpeed
+leadscout audit                  # classify site, fetch up to 5 pages (robots.txt obeyed), HTML and tech checks,
+                                 # domain dates (RDAP) and certificate expiry, PageSpeed
 leadscout pagespeed              # re-run PageSpeed later (e.g. after adding a key)
 leadscout score                  # 0-100 score, reasons, best deliverable email, dedupe, chains out
 leadscout enrich [--area ...]    # optional: match the best leads on Google Places (see below)

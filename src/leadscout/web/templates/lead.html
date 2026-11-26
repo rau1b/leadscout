@@ -109,7 +109,10 @@
         <dt>Website</dt><dd>{% if r.website %}<a href="{{ r.website if '://' in r.website else 'http://' ~ r.website }}" target="_blank" rel="noopener">{{ r.website }}</a>{% else %}None{% endif %}</dd>
         <dt>Site check</dt><dd>{{ site_labels.get(r.site_class, r.site_class) }}{% if r.fetch_error == 'dns' %}, domain doesn't resolve{% elif r.fetch_error %}, {{ r.fetch_error }}{% endif %}</dd>
         {% if r.perf_score is not none %}<dt>Speed score</dt><dd>{{ r.perf_score }}/100{% if r.lcp_s %}, main content in {{ r.lcp_s }}s on mobile{% endif %}</dd>{% endif %}
-        {% if r.generator %}<dt>Built with</dt><dd>{{ r.generator }}</dd>{% endif %}
+        {% if r.tech %}<dt>Built with</dt><dd>{{ r.tech }}{% if r.cms_version %} (version {{ r.cms_version }}){% endif %}</dd>
+        {% elif r.generator %}<dt>Built with</dt><dd>{{ r.generator }}</dd>{% endif %}
+        {% if r.domain_expires or r.domain_registered %}<dt>Domain</dt><dd>{% if r.domain_expires %}Expires {{ r.domain_expires|longdate }}{% endif %}{% if r.domain_registered %}{% if r.domain_expires %}; {% endif %}registered {{ r.domain_registered|longdate }}{% endif %}</dd>{% endif %}
+        {% if r.cert_expires %}<dt>Certificate</dt><dd>Expires {{ r.cert_expires|longdate }}</dd>{% endif %}
         {% if r.copyright_year %}<dt>Footer year</dt><dd>{{ r.copyright_year }}</dd>{% endif %}
         <dt>Source</dt><dd>{{ 'Overture Maps' if r.source == 'overture' else 'Your import' }}</dd>
       </dl>
