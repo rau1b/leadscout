@@ -35,4 +35,10 @@ Added by migration `0004_demos.sql`. One row per business: rebuilding a demo rep
 - **Readers:** Jason's pitch and scoring code may use a demo's `url` and views, but only if the table exists. Check with `select 1 from sqlite_master where type = 'table' and name = 'demos'`. Find & qualify must keep working without it.
 - **Privacy:** a demo page holds the business's details on the preview host. When `leadscout forget` deletes a business, its demo pages must come off the preview host too, not only out of the table. Show & close provides that.
 
-Written today: `settings_changed`; `demo_built`, `demo_published` and `demo_expired` (data: `template`); `demo_viewed` (actor `preview-host`, no data). To add a type, add it to this table in the same PR.
+## C7 details: events written so far
+
+- Find & qualify: `opted_out` (from `compliance.opt_out_business`).
+- Show & close: `demo_built`, `demo_published` and `demo_expired` (data: `template`); `demo_viewed` (actor `preview-host`, no data).
+- Shared: `settings_changed` (data: the changed key names).
+
+The other types in C7 are planned. When you start writing one, add it to this list in the same PR.
