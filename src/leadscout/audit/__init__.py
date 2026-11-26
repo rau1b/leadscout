@@ -5,7 +5,7 @@ import json
 
 import httpx
 
-from leadscout.audit import pagespeed
+from leadscout.audit import domain, pagespeed
 from leadscout.audit.classify import classify_static
 from leadscout.audit.site import UA, audit_site
 from leadscout.db import now
@@ -13,7 +13,7 @@ from leadscout.db import now
 FIELDS = (
     "site_class", "final_url", "status_code", "https", "viewport", "copyright_year", "generator",
     "has_whatsapp", "has_tel", "has_maps", "has_form", "found_emails", "perf_score", "lcp_s",
-    "cls", "tbt_ms", "psi_error", "fetch_error",
+    "cls", "tbt_ms", "psi_error", "fetch_error", "domain_registered", "domain_expires", "cert_expires", "tech", "cms_version",
 )
 
 
@@ -32,6 +32,7 @@ async def _audit_all(con, rows, api_key: str, run_psi: bool, progress) -> None:
     site_sem, psi_sem = asyncio.Semaphore(10), asyncio.Semaphore(4)
     headers = {"User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9"}
     async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
+        rdap = await domain.servers(client) if rows else {}
 
         async def one(r):
             try:
@@ -41,6 +42,7 @@ async def _audit_all(con, rows, api_key: str, run_psi: bool, progress) -> None:
                 else:
                     async with site_sem:
                         result = await audit_site(client, r["website"])
+                        result.update(await domain.facts(client, r["website"], result, rdap))  # an expired domain shows here too
                     if run_psi and result["site_class"] == "real":
                         async with psi_sem:
                             result.update(await pagespeed.run(client, result["final_url"], api_key))

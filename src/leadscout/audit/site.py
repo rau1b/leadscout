@@ -1,9 +1,11 @@
 """Fetch a business website and run the cheap checks PageSpeed doesn't do."""
 
+import asyncio
 import codecs
 import re
 from datetime import date
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import httpx
 from bs4 import BeautifulSoup
@@ -21,6 +23,20 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 JUNK_EMAIL = ("example.", "sentry", "wixpress", "domain.com", "email.com", "yourname", "@2x", "user@", "name@")
 YEAR_RE = re.compile(r"(?:©|&copy;|copyright)\s*(?:\d{4}\s*[-–]\s*)?((?:19|20)\d{2})", re.I)
 JQUERY_RE = re.compile(r"jquery[.-]?(\d+\.\d+)", re.I)
+WP_VERSION_RE = re.compile(r"wordpress\s+(\d+(?:\.\d+){1,2})", re.I)
+BOOKING = ("calendly", "practo.com", "setmore", "simplybook", "acuityscheduling", "zcal.co", "book now", "book appointment",
+           "book an appointment")
+# Our own small rule set, matched against the page and its headers: (name, any of these in the lowercased HTML or headers).
+TECH_RULES = (
+    ("WordPress", ("wp-content", "wp-includes")),
+    ("Wix", ("wixstatic.com", "x-wix-request-id")),
+    ("Blogger", ("blogger.com", "blogspot.com")),
+    ("Google Sites", ("sites.google.com",)),
+    ("Shopify", ("cdn.shopify.com", "x-shopify-stage", "shopify.theme")),
+    ("Linktree", ("linktr.ee",)),
+    ("Elementor", ("elementor-",)),
+    ("Divi", ("et_pb_", "/themes/divi/")),
+)
 
 
 def extract_emails(html: str, soup: BeautifulSoup) -> set[str]:
@@ -60,11 +76,87 @@ def check_html(html: str) -> dict:
         "has_whatsapp": int(any("wa.me" in h or "whatsapp.com" in h for h in links)),
         "has_tel": int(any(h.startswith("tel:") for h in links)),
         "has_maps": int("google.com/maps" in low or "maps.google" in low or "goo.gl/maps" in low or "maps.app.goo.gl" in low),
-        "has_form": int(soup.find("form") is not None or "calendly" in low or "book now" in low or "book appointment" in low),
+        "has_form": int(soup.find("form") is not None or any(b in low for b in BOOKING)),
         "emails": extract_emails(html, soup),
         # Little text AND no scripts = an empty page. Little text WITH scripts is usually a JavaScript site.
         "parked": any(p in low for p in PARKED) or (len(soup.get_text(strip=True)) < 80 and not soup.find("script")),
     }
+
+
+def detect_tech(html: str, headers: dict | None = None) -> dict:
+    """The technology a site is built with, from its HTML and headers: tech ("WordPress, Elementor, jQuery 1.12",
+    or "Hand-made" when nothing matches) and cms_version (WordPress's, when the page states it)."""
+    low = html.lower() + " " + " ".join(f"{k}: {v}" for k, v in (headers or {}).items()).lower()
+    found = [name for name, marks in TECH_RULES if any(m in low for m in marks)]
+    gen = BeautifulSoup(html, "html.parser").find("meta", attrs={"name": re.compile("^generator$", re.I)})
+    wp = WP_VERSION_RE.search((gen.get("content") or "") if gen else "")
+    if wp and "WordPress" not in found:
+        found.insert(0, "WordPress")
+    jq = JQUERY_RE.search(html)
+    if jq and jq.group(1).startswith("1."):
+        found.append(f"jQuery {jq.group(1)}")
+    builders = [t for t in found if not t.startswith("jQuery")]
+    return {"tech": ", ".join(found if builders else ["Hand-made", *found]), "cms_version": wp.group(1) if wp else None}
+
+
+MAX_PAGES = 5  # the home page plus up to four of its contact, about and services pages
+CRAWL_SECONDS = 40  # all the extra pages together; the home page keeps its own limits
+PAGE_WORDS = ("contact", "about", "service")
+
+
+def pages_to_visit(base: str, soup: BeautifulSoup, guess_contact: bool) -> list[str]:
+    """Contact, about and services pages linked from the home page, on the same host. Without a contact link and
+    without an email yet, try /contact and /contact-us from the site root."""
+    host, urls = urlparse(base).hostname, []
+    for a in soup.find_all("a", href=True):
+        u = urljoin(base, a["href"]).split("#")[0]
+        p = urlparse(u)
+        text = f"{p.path} {a.get_text(' ')}".lower()
+        same_site = p.scheme in ("http", "https") and p.hostname == host and u.rstrip("/") != base.rstrip("/")
+        if same_site and u not in urls and any(w in text for w in PAGE_WORDS):
+            urls.append(u)
+    if guess_contact and not any("contact" in u.lower() for u in urls):
+        urls += [urljoin(base, "/contact"), urljoin(base, "/contact-us")]  # from the site root, not the current folder
+    return urls[:MAX_PAGES - 1]
+
+
+async def _robots(client: httpx.AsyncClient, base: str) -> RobotFileParser:
+    rp = RobotFileParser()
+    try:
+        r, text = await fetch(client, urljoin(base, "/robots.txt"))
+    except (httpx.HTTPError, httpx.InvalidURL):
+        rp.allow_all = True
+        return rp
+    if r.status_code in (401, 403):
+        rp.disallow_all = True
+    elif r.status_code >= 400:
+        rp.allow_all = True
+    else:
+        rp.parse(text.splitlines())
+    return rp
+
+
+async def crawl(client: httpx.AsyncClient, base: str, soup: BeautifulSoup, guess_contact: bool) -> dict:
+    """Read the site's other pages (robots.txt obeyed) for emails, WhatsApp, booking, map and tel: links."""
+    found = {"emails": set(), "has_whatsapp": 0, "has_tel": 0, "has_maps": 0, "has_form": 0}
+    urls = pages_to_visit(base, soup, guess_contact)
+    if not urls:
+        return found
+    robots = await _robots(client, base)
+    for u in urls:
+        if not robots.can_fetch("*", u):
+            continue
+        try:
+            r, text = await fetch(client, u)
+        except (httpx.HTTPError, httpx.InvalidURL):
+            continue
+        if r.status_code >= 400 or "html" not in r.headers.get("content-type", "html"):
+            continue
+        page = check_html(text)
+        found["emails"] |= page["emails"]
+        for k in ("has_whatsapp", "has_tel", "has_maps", "has_form"):
+            found[k] |= page[k]
+    return found
 
 
 MAX_BYTES = 2_000_000  # enough for any real home page; stops one huge file from stalling a search
@@ -143,18 +235,16 @@ async def audit_site(client: httpx.AsyncClient, url: str) -> dict:
     emails = checks.pop("emails")
     parked = checks.pop("parked")
     result.update(checks)
+    result.update(detect_tech(text, dict(resp.headers)))
     result["site_class"] = "broken" if parked else "real"
-    # Look for an email on the contact page if the home page has none.
-    if not emails and not parked:
-        for path in ("contact", "contact-us", "contactus"):
-            try:
-                r2, text2 = await fetch(client, urljoin(str(resp.url), "/" + path))  # from the site root, not the current folder
-            except (httpx.HTTPError, httpx.InvalidURL):
-                continue
-            if r2.status_code < 400:
-                emails = extract_emails(text2, BeautifulSoup(text2, "html.parser"))
-                if emails:
-                    break
+    if not parked:
+        try:
+            more = await asyncio.wait_for(crawl(client, str(resp.url), BeautifulSoup(text, "html.parser"), not emails), CRAWL_SECONDS)
+        except TimeoutError:
+            more = {}  # the home page's findings stand
+        emails |= more.pop("emails", set())
+        for k, v in more.items():
+            result[k] = int(bool(result.get(k)) or bool(v))
     result["found_emails"] = emails
     return result
 
