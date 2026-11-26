@@ -109,14 +109,24 @@ def _humanize(category: str | None, path: str | None) -> str | None:
     return raw[:1].upper() + raw[1:] if raw else None
 
 
+# Two names for one town: listings often give one as the locality and the other as the city ("Margao, Madgaon").
+SAME_PLACE = {"madgaon": "margao", "panjim": "panaji", "vasco da gama": "vasco", "mapuca": "mapusa", "bombay": "mumbai", "bangalore": "bengaluru"}
+
+
 def _join(*parts) -> str | None:
-    """Non-empty parts, in order, without repeats ("Kukatpally, Hyderabad, Hyderabad" -> "Kukatpally, Hyderabad")."""
+    """Non-empty parts, in order, without repeats or stray commas.
+
+    "Aquem,", "Margao", "Madgaon" -> "Aquem, Margao"; "Kukatpally", "Hyderabad", "Hyderabad" -> "Kukatpally, Hyderabad".
+    Only drops repeats and empty bits: every word shown still comes from the row.
+    """
     seen, out = set(), []
-    for p in parts:
-        p = (p or "").strip()
-        if p and p.lower() not in seen:
-            seen.add(p.lower())
-            out.append(p)
+    for part in parts:
+        for piece in (part or "").split(","):
+            piece = piece.strip()
+            key = SAME_PLACE.get(piece.lower(), piece.lower())
+            if piece and key not in seen:
+                seen.add(key)
+                out.append(piece)
     return ", ".join(out) or None
 
 

@@ -115,6 +115,15 @@ def test_missing_fields_are_left_out(con):
     assert "Directions" not in text
 
 
+def test_address_without_repeats_or_stray_commas():
+    """Real Goa listings: the address ends in a comma, and Margao/Madgaon are one town under two names."""
+    f = demos.facts(row_with(address="Daud Residency, Shop No. 15, Opp. HDFC Bank, Aquem,", locality="Margao", city="Madgaon", postcode="403601"))
+    assert f["address"] == "Daud Residency, Shop No. 15, Opp. HDFC Bank, Aquem, Margao, 403601"
+    assert f["area"] == "Margao"
+    assert demos.facts(row_with(locality="Kukatpally", city="Hyderabad", area="Kukatpally, Hyderabad"))["area"] == "Kukatpally, Hyderabad"
+    assert demos.facts(row_with(address="Shop 4, Margao", locality="Margao", city="Goa"))["address"] == "Shop 4, Margao, Goa"
+
+
 def test_placeholders_are_labelled_empty_frames(con):
     """Step 1: the page reads like a website, but every frame says it's a placeholder and holds no facts or numbers."""
     add(con, **FULL)
