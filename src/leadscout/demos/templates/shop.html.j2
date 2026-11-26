@@ -1,0 +1,30 @@
+{# Every other local business: ink and saffron, a striped awning, products as a grid. #}
+{% extends "base.html.j2" %}
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#f7f5f0;--card:#fff;--ink:#1d1b18;--muted:#5e5850;--line:#e2ddd3;--accent:#a6520c;--accent-ink:#fff;--soft:#f3e7d6;
+{% endblock %}
+{% block css %}
+.awning{height:28px;margin-top:60px;background:repeating-linear-gradient(90deg,#e08a1e 0 36px,#fff7ea 36px 72px);border-radius:0 0 14px 14px}
+.front{padding:28px 0 8px;text-align:center}
+.front svg{width:72px;margin:0 auto 12px}
+.grid4{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid4 .ph{min-height:110px}
+.photos{display:grid;grid-template-columns:3fr 2fr;gap:10px}
+.s-hours,.s-about,.s-photos{border-top:1px dashed var(--line)}
+{% endblock %}
+{% block page %}
+<div class="awning" aria-hidden="true"></div>
+<div class="wrap">
+<header class="front">
+  <svg class="art" viewBox="0 0 72 60" aria-hidden="true"><path d="M8 22h56l-4 34H12z" fill="var(--accent)"/><path d="M24 22c0-14 24-14 24 0" stroke="var(--ink)" stroke-width="4" fill="none"/></svg>
+  {{ p.heading() }}
+</header>
+{{ p.actions() }}
+{{ p.services(cls="grid4", extra=3) }}
+{{ p.hours() }}
+{{ p.about() }}
+{{ p.photos(extra=1) }}
+{{ p.enquiry() }}
+{{ p.footer() }}
+</div>
+{% endblock %}

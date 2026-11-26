@@ -16,3 +16,23 @@ The interfaces between Find & qualify (Jason) and Show & close (rau1b); see [TRA
 | C10 | Dashboard: each new area is its own `web/<area>.py`, one import line in `app.py`, one nav link in `base.html`. Migrations: next free number at merge time. | both | No clashes in shared files | Not applicable |
 
 Changing a contract is the only time you must message rau1b first. Everything else, you decide.
+
+## C1 details: the `demos` table (rau1b)
+
+Added by migration `0004_demos.sql`. One row per business: rebuilding a demo replaces the old row and page.
+
+| Column | Meaning |
+|---|---|
+| `business_id` | `references businesses(id) on delete cascade`, so `forget` and the retention purge remove demos too |
+| `slug` | the demo's path on the preview host |
+| `template` | which demo template was used |
+| `url` | the full preview link put in a pitch; null until the page is on the preview host |
+| `built_at` | when it was built (ISO time, IST) |
+| `expires_at` | when the preview host takes it down |
+| `first_viewed_at` | first time the business opened it, or null |
+| `view_count` | how many times it was opened |
+
+- **Readers:** Jason's pitch and scoring code may use a demo's `url` and views, but only if the table exists. Check with `select 1 from sqlite_master where type = 'table' and name = 'demos'`. Find & qualify must keep working without it.
+- **Privacy:** a demo page holds the business's details on the preview host. When `leadscout forget` deletes a business, its demo pages must come off the preview host too, not only out of the table. Show & close provides that.
+
+Written today: `settings_changed`; `demo_built`, `demo_published` and `demo_expired` (data: `template`); `demo_viewed` (actor `preview-host`, no data). To add a type, add it to this table in the same PR.

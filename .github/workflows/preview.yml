@@ -1,0 +1,24 @@
+name: preview-worker
+
+on:
+  push:
+    paths: ["preview/**", ".github/workflows/preview.yml"]
+  pull_request:
+    paths: ["preview/**", ".github/workflows/preview.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: preview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: preview/package-lock.json
+      - run: npm ci
+      - run: npm test

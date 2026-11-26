@@ -1,0 +1,31 @@
+{# Salon / spa: plum on blush, a centred arch header, gallery first. #}
+{% extends "base.html.j2" %}
+{% import "_parts.html.j2" as p with context %}
+{% block palette %}  --bg:#fbf6f4;--card:#fff;--ink:#2a1820;--muted:#6b5560;--line:#ecd9d8;--accent:#7a2e4f;--accent-ink:#fff;--soft:#f5e6e6;
+{% endblock %}
+{% block css %}
+.arch{margin:72px auto 0;padding:40px 20px 28px;text-align:center;background:var(--soft);border-radius:200px 200px 16px 16px}
+.arch svg{width:64px;margin:0 auto 12px}
+.arch .kicker{letter-spacing:.16em}
+.photos{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:repeat(2,110px);gap:10px}
+.photos .ph{min-height:0}
+.photos .ph:first-child{grid-row:span 2}
+.s-services,.s-hours,.s-about{text-align:center}
+.s-about dl{text-align:left;max-width:420px;margin:0 auto}
+.v-salon h2{font-style:italic}
+{% endblock %}
+{% block page %}
+<div class="wrap">
+<header class="arch">
+  <svg class="art" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6c8 10 8 22 0 30-8-8-8-20 0-30z" fill="var(--accent)"/><path d="M32 36c-4-10-14-16-26-14 2 12 12 20 26 14z" fill="var(--accent)" opacity=".55"/><path d="M32 36c4-10 14-16 26-14-2 12-12 20-26 14z" fill="var(--accent)" opacity=".55"/><rect x="31" y="36" width="2" height="22" fill="var(--accent)"/></svg>
+  {{ p.heading() }}
+</header>
+{{ p.actions() }}
+{{ p.photos() }}
+{{ p.services() }}
+{{ p.hours() }}
+{{ p.about() }}
+{{ p.enquiry() }}
+{{ p.footer() }}
+</div>
+{% endblock %}
