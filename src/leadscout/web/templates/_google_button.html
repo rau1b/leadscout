@@ -1,0 +1,6 @@
+{% set gid = google_place_id(r.id) %}
+{% if gid %}
+<div id="google" class="google" aria-live="polite">
+  <button class="btn quiet small" hx-get="/leads/{{ r.id }}/google" hx-target="#google">Show Google details</button>
+</div>
+{% endif %}

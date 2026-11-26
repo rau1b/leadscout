@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from leadscout import config, db, settings
 from leadscout.compliance import DAYS
+from leadscout.enrich import places
 from leadscout.mailer.sender import lease_held
 from leadscout.web import sending
 from leadscout.web.app import app, ctx, tpl
@@ -24,7 +25,8 @@ def _render(request: Request, values: dict, errors: dict, saved: str = "", statu
         request, "settings.html",
         ctx(request, nav="settings", v=values, errors=errors, saved=saved, partial=partial, days=DAYS, warmup_labels=settings.WARMUP,
             has_file=has_file, problem=config.sender_problem(cfg) if has_file else None,
-            has_key=bool(cfg.google_api_key)),  # only whether it's set: the key itself stays in .env
+            has_key=bool(cfg.google_api_key),  # only whether it's set: the key itself stays in .env
+            places_used=places.used_this_month(db.connect()), places_cap=cfg.enrich["monthly_request_cap"]),
         status_code=status,
     )
 

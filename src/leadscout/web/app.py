@@ -460,4 +460,5 @@ def start_find(city: str = Form(""), neighbourhood: str = Form(""), types: list[
 # Routes for replies, deals and hiding live in extras.py.
 from leadscout.web import extras  # noqa: E402,F401
 from leadscout.web import settings_page  # noqa: E402,F401
+from leadscout.web import enrich  # noqa: E402,F401
 from leadscout.web import demos as demos_area  # noqa: E402,F401

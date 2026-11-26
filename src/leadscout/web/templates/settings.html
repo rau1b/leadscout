@@ -103,6 +103,17 @@
         <p class="keyline">{% if has_key %}<b class="ok">Set</b> in <code>.env</code>.{% else %}<b>Not set.</b> Add <code>GOOGLE_API_KEY=...</code> to <code>.env</code> for speed scores (free; see the README).{% endif %}
           Keys and the Gmail login never go on this page.</p>
       </div>
+      <fieldset class="field wide">
+        <legend>Google Places for your best leads</legend>
+        <label class="check"><input type="checkbox" name="enrich.places_enabled" value="1" {% if v.get('enrich.places_enabled') in (true, 'True', '1') %}checked{% endif %}> Look up review counts and open status on Google</label>
+        <p class="hint">Only Google's place id is saved; reviews and hours are fetched when needed and never stored. Needs the key above. Also set a daily quota in Google Cloud Console.</p>
+      </fieldset>
+      {{ field("enrich.monthly_request_cap", "Google requests a month, at most", "number", "LeadScout stops for the month at this number.", extra='min="1" inputmode="numeric"') }}
+      {{ field("enrich.min_score_to_enrich", "Look up leads scoring at least", "number", "0 to 100.", extra='min="0" max="100" inputmode="numeric"') }}
+      <div class="field wide">
+        <span class="label">Google requests this month</span>
+        <p class="keyline"><b>{{ places_used }}</b> of {{ places_cap }}{% if places_used >= places_cap %}. <b>Stopped for this month.</b>{% endif %}</p>
+      </div>
     </div>
   </section>
 

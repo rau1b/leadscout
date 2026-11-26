@@ -344,3 +344,8 @@ input[type=email], input[type=tel], input[type=url], input[type=number], input[t
   .settings section { grid-template-columns: minmax(0, 1fr); }
   .settings .grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Live Google details on the lead page */
+.google { margin-top: var(--s4); }
+.google dl { margin-top: var(--s2); }
+.google .hours { margin: 0; padding-left: 18px; }

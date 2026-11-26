@@ -120,6 +120,33 @@ def chain_domains(con, min_count: int = 3) -> set[str]:
     return {d for d, n in counts.items() if n >= min_count}
 
 
+WELL_REVIEWED = 20  # Google reviews: an established business that can likely pay for a website
+EARLY = (None, "new", "excluded", "drafted", "approved")  # statuses whose score still decides anything
+
+
+def _google_details(con, cfg, rows, only) -> dict:
+    """Live Google details for the leads rescored here that have a place id, in memory only (Google's terms).
+    Empty when Places is off; stops quietly at the monthly cap or on a network error."""
+    import httpx
+
+    from leadscout.enrich import places
+
+    if not places.enabled(cfg):
+        return {}
+    ids = dict(con.execute("select business_id, source_id from source_records where source = ?", (places.SOURCE,)).fetchall())
+    out = {}
+    for r in rows:
+        pid = ids.get(r["id"])
+        if pid and (not only or r["id"] == only) and r["lead_status"] in EARLY:
+            try:
+                out[r["id"]] = places.details(con, cfg, pid)
+            except places.CapReached:
+                break
+            except (httpx.HTTPError, ValueError):
+                continue  # one lookup failing never stops scoring
+    return out
+
+
 def score_all(con, cfg, only: str | None = None) -> dict:
     """Score every lead, or with `only`, just that business (duplicate checks still see every listing)."""
     sc = cfg.scoring
@@ -135,6 +162,7 @@ def score_all(con, cfg, only: str | None = None) -> dict:
                for e in jload(r["emails"]) + jload(r["found_emails"]) if "@" in e}
     with ThreadPoolExecutor(max_workers=32) as pool:
         list(pool.map(emailcheck.domain_accepts_mail, domains))
+    google = _google_details(con, cfg, rows, only)
     leads = []
     for r in rows:
         if only and r["id"] != only:
@@ -158,6 +186,8 @@ def score_all(con, cfg, only: str | None = None) -> dict:
             excluded = f"Chain or aggregator domain ({site_domain})"
         elif is_suppressed(con, email, r["phone"]):
             excluded = "On the opt-out list"
+        elif google.get(r["id"], {}).get("businessStatus") == "CLOSED_PERMANENTLY":
+            excluded = "Closed for good, according to Google"
 
         need, reasons = site_need(r)
         value = 0
@@ -171,6 +201,9 @@ def score_all(con, cfg, only: str | None = None) -> dict:
             reasons.append("Email address found")
         if r["phone_type"] == "mobile":
             value += 5
+        if (google.get(r["id"], {}).get("userRatingCount") or 0) >= WELL_REVIEWED:
+            value += 5
+            reasons.append("Well reviewed on Google")  # never Google's numbers: those may not be stored
         leads.append({"r": r, "email": email, "excluded": excluded, "score": min(100, need + value), "reasons": reasons,
                       "site": site_domain, "write": True})
 

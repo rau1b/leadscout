@@ -1,0 +1,9 @@
+{% if error %}<p class="hint">{{ error }}</p>{% else %}
+<dl>
+  {% if d.rating is defined %}<dt>On Google</dt><dd>{{ d.rating }} stars from {{ d.userRatingCount or 0 }} reviews</dd>{% endif %}
+  {% if d.businessStatus %}<dt>Status</dt><dd>{{ status.get(d.businessStatus, d.businessStatus) }}</dd>{% endif %}
+  {% if d.regularOpeningHours and d.regularOpeningHours.weekdayDescriptions %}<dt>Hours</dt>
+  <dd><ul class="hours">{% for h in d.regularOpeningHours.weekdayDescriptions %}<li>{{ h }}</li>{% endfor %}</ul></dd>{% endif %}
+</dl>
+<p class="hint">Data from Google Maps, shown live and not saved. <a href="https://www.google.com/maps/place/?q=place_id:{{ pid|urlencode }}" target="_blank" rel="noopener">Open in Google Maps</a></p>
+{% endif %}
