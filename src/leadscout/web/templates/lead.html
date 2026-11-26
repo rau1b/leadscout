@@ -100,6 +100,7 @@
     <section class="facts">
       <h2>Business</h2>
       <dl>
+        {% if r.basic_category %}<dt>Type</dt><dd>{{ r.basic_category|nicecat }}</dd>{% endif %}
         <dt>Category</dt><dd>{{ r.category|nicecat }}</dd>
         {% if r.area %}<dt>Found in</dt><dd><a href="/leads?area={{ r.area|urlencode }}">{{ r.area }}</a></dd>{% endif %}
         {% if r.address or r.locality %}<dt>Address</dt><dd>{{ r.address or '' }}{% if r.locality %}, {{ r.locality }}{% endif %}</dd>{% endif %}

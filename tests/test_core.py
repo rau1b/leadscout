@@ -600,15 +600,16 @@ def test_searching_an_area_again_reuses_its_entry(con):
 
 
 def test_old_repeated_area_rows_are_merged(tmp_path):
+    import sqlite3
+
     path = tmp_path / "old.db"
-    con = db.connect(path)
+    con = sqlite3.connect(path)
+    con.executescript(db.migrations()[0][1].read_text(encoding="utf-8"))  # a file from before numbered migrations: version 0
     for label, lat in (("Navelim", 15.25885), ("Navelim", 15.25885), ("Madgaon", 15.27501), ("goa", None), ("Goa", None)):
         con.execute("insert into searches (city, label, categories, status, created_at, lat, lon) values (?, ?, '{}', 'done', '2026-11-21', ?, ?)",
                     (label, label, lat, lat and 73.9))
-    con.execute("pragma user_version = 0")  # a file from before numbered migrations
     con.commit()
     con.close()
-    db._ready.clear()
     con = db.connect(path)
     assert sorted(r[0] for r in con.execute("select label from searches")) == ["Goa", "Madgaon", "Navelim"]
 

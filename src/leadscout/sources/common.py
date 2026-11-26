@@ -62,12 +62,13 @@ def phone_info(raw: str | None) -> tuple[str | None, str | None]:
 def upsert_business(con, b: dict) -> None:
     phone, phone_type = phone_info(b.get("phone"))
     con.execute(
-        """insert into businesses (id, source, name, category, category_path, address, locality, postcode,
-               lat, lon, phone, phone_type, website, emails, socials, confidence, brand, area, city, fetched_at)
-           values (:id, :source, :name, :category, :category_path, :address, :locality, :postcode,
-               :lat, :lon, :phone, :phone_type, :website, :emails, :socials, :confidence, :brand, :area, :city, :fetched_at)
+        """insert into businesses (id, source, name, category, category_path, basic_category, category_alternates, address,
+               locality, postcode, lat, lon, phone, phone_type, website, emails, socials, confidence, brand, area, city, fetched_at)
+           values (:id, :source, :name, :category, :category_path, :basic_category, :category_alternates, :address,
+               :locality, :postcode, :lat, :lon, :phone, :phone_type, :website, :emails, :socials, :confidence, :brand, :area, :city, :fetched_at)
            on conflict(id) do update set
                name = excluded.name, category = excluded.category, category_path = excluded.category_path,
+               basic_category = excluded.basic_category, category_alternates = excluded.category_alternates,
                address = excluded.address, locality = excluded.locality, postcode = excluded.postcode,
                phone = excluded.phone, phone_type = excluded.phone_type, website = excluded.website,
                emails = excluded.emails, socials = excluded.socials, confidence = excluded.confidence,
@@ -81,6 +82,8 @@ def upsert_business(con, b: dict) -> None:
             "name": b["name"],
             "category": b.get("category"),
             "category_path": b.get("category_path"),
+            "basic_category": b.get("basic_category"),
+            "category_alternates": json.dumps(list(b.get("category_alternates") or [])),
             "address": b.get("address"),
             "locality": b.get("locality"),
             "postcode": b.get("postcode"),
@@ -97,4 +100,10 @@ def upsert_business(con, b: dict) -> None:
             "city": b.get("city") or ((b.get("area") or "").split(",")[-1].strip() or None),
             "fetched_at": now(),
         },
+    )
+    con.execute(
+        """insert into source_records (business_id, source, source_id, fetched_at, release) values (?, ?, ?, ?, ?)
+           on conflict (business_id, source) do update set source_id = excluded.source_id,
+               fetched_at = excluded.fetched_at, release = excluded.release""",
+        (b["id"], b["source"], b.get("source_id"), now(), b.get("release")),
     )
