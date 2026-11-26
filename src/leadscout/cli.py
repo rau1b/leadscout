@@ -317,9 +317,10 @@ def serve(port: int = 8000):
 
 
 # Show & close commands live in their own modules (docs/TRACKS.md).
-from leadscout.demos.cli import demo  # noqa: E402
+from leadscout.demos.cli import demo, demos_app  # noqa: E402
 
 app.command()(demo)
+app.add_typer(demos_app, name="demos")
 
 
 if __name__ == "__main__":

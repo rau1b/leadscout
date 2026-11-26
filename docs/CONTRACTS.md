@@ -49,4 +49,4 @@ Written with `db.log_event(con, type, business_id=None, actor="system", **data)`
 | Show & close (rau1b) | `demo_built`, `demo_viewed`, `demo_expired`, `proposal_sent`, `invoice_sent`, `invoice_paid` |
 | Shared | `settings_changed` (the Settings page; data: the changed key names only) |
 
-Written today: `settings_changed` and `demo_built` (data: `template`). To add a type, add it to this table in the same PR.
+Written today: `settings_changed`; `demo_built`, `demo_published` and `demo_expired` (data: `template`); `demo_viewed` (actor `preview-host`, no data). To add a type, add it to this table in the same PR.

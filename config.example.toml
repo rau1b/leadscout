@@ -56,3 +56,11 @@ purge_uncontacted_after_days = 90
 [backups]
 # Copies in data/backups/ (one a day, one before each upgrade) are deleted after this many days.
 keep_days = 14
+
+[preview]
+# Show & close: the preview host for demo pages (a free Cloudflare Worker). Leave base_url empty to keep demos local.
+# Setup, step by step: docs/STACK.md, "Preview host". Secrets go in .env only: CLOUDFLARE_API_TOKEN and PREVIEW_SYNC_SECRET.
+base_url = ""            # e.g. "https://demo.yourstudio.in"
+worker_name = "leadscout-preview"
+account_id = ""          # Cloudflare dashboard, right-hand side of any domain's overview page
+kv_namespace_id = ""     # from `npx wrangler kv namespace create EVENTS`, run in the preview folder

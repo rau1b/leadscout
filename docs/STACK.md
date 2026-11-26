@@ -86,6 +86,50 @@ Copies older than `[backups] keep_days` (14 by default) are deleted after each b
 
 Restore first saves the current database as `...-pre-restore.db`, so you can undo it by restoring that file. An older-version backup is migrated. Then the opt-out list is re-applied as the live rules do: the hashed entries from the current database and the backup are merged (keeping the stronger reason), businesses that asked to be forgotten are deleted, opted-out leads are marked opted out with their history kept (a won lead is left for you to decide), and bounced addresses are left alone. So a restore never brings back someone who opted out or asked to be forgotten.
 
+## Preview host (demo pages online)
+
+Demo pages go online on a free Cloudflare Worker, on a subdomain of your studio domain such as `demo.yourstudio.in`. The Worker serves only the static demo pages and stores no lead data. A view is a demo's slug and a time; an unsubscribe is a token and a time. It keeps no IP addresses and sets no cookies. The code is in `preview/` (`src/index.js`, tests in `test/`).
+
+| Command | What it does |
+|---|---|
+| `leadscout demo <id>` | builds the page locally in `data/demos/<slug>/` |
+| `leadscout demos publish` | deploys every live demo, sets its link (`demos.url`) and takes expired, opted-out or forgotten ones down |
+| `leadscout demos sync` | pulls views and unsubscribes back (the dashboard also runs it every hour, and the Demos page has a Sync now button) |
+| `leadscout demos secret` | prints a new random sync secret |
+
+Each deploy replaces the whole site, and preview URLs are switched off, so a page that comes down can't be reached at an older address. Never use `wrangler rollback`: it would bring taken-down pages back. To fix a mistake, rebuild or delete the demo and publish again.
+
+### One-time setup (about 30 minutes)
+
+You need Node.js (LTS, from nodejs.org) for wrangler, Cloudflare's deploy tool. Everything here is free.
+
+1. **Cloudflare account.** Sign up at dash.cloudflare.com on the Free plan.
+2. **Your domain on Cloudflare.** In the dashboard, choose *Add a domain*, type your studio domain and pick the Free plan. Cloudflare shows two nameservers: set them at your domain registrar (GoDaddy, Hostinger, BigRock...) in place of the old ones. It can take a few hours. Your existing website and email keep working if Cloudflare copied your DNS records; compare its list with your registrar's before switching. No domain yet? Skip this and use the free `*.workers.dev` address (step 6).
+3. **Install wrangler** once, in a terminal in the LeadScout folder: `cd preview`, then `npm ci`.
+4. **Storage for views and unsubscribes.** In the dashboard: *Storage & databases → Workers KV → Create*, name it `leadscout-events`, then copy its **ID**.
+5. **API token.** *My profile → API tokens → Create token → "Edit Cloudflare Workers"* template. Under *Account resources* pick your account; under *Zone resources* pick your studio domain. Create it and copy the token: it's shown once. If the first publish says it can't add the custom domain, edit the token and add *Zone → DNS → Edit* for that domain.
+6. **Account ID.** *Workers & Pages* overview, right-hand side: copy the *Account ID*. If you skipped step 2, the same page shows your `workers.dev` subdomain: your address is `https://leadscout-preview.<that subdomain>.workers.dev`.
+7. **.env** (never commit it; the repo is public):
+   ```
+   CLOUDFLARE_API_TOKEN=the token from step 5
+   PREVIEW_SYNC_SECRET=the output of `leadscout demos secret`
+   ```
+8. **config.toml**, in the `[preview]` section:
+   ```toml
+   base_url = "https://demo.yourstudio.in"   # or the workers.dev address from step 6
+   account_id = "the ID from step 6"
+   kv_namespace_id = "the ID from step 4"
+   ```
+9. **First deploy.** Build a demo (`leadscout demo <id>`), then `leadscout demos publish`, or the Publish button on the Demos page. The first one also creates the `demo.` DNS record. Open the link on your phone and check the concept banner, then run `leadscout demos sync`: the view shows up.
+
+### Good to know
+
+- Opening a demo yourself counts as a view too. Check pages before you send the link, or keep that in mind when you read the numbers.
+- Free plan limits that matter: 100,000 requests a day and 1,000 KV writes a day. A view is written at most once per demo per 30 minutes, so this is far more than LeadScout needs.
+- Each route has a per-minute limit inside the Worker. For a firmer limit, add one free *rate limiting rule* under *Security → WAF* for `demo.yourstudio.in/u/*` and `/v/*`.
+- Unsubscribes from the host wait in LeadScout (the Demos page says how many) until the Find & qualify side has `outreach.unsubscribe.resolve()` (contract C4). Then they're applied on the next sync.
+- If you rotate `PREVIEW_SYNC_SECRET`, publish again so the Worker gets the new one.
+
 ## Layout
 
 ```
@@ -95,8 +139,10 @@ src/leadscout/
   sources/   geo.py (Nominatim), overture.py, csv_import.py, common.py
   audit/     classify.py, site.py, pagespeed.py, __init__.py (runner)
   pitch/     templates.py, jobs.py (Claude Code hand-off)
+  demos/     __init__.py (builder), preview.py (publish, sync), cli.py, templates/ (one per vertical)
   mailer/    gmail.py, sender.py
   web/       app.py, templates/, static/
+preview/     the Cloudflare Worker for demo pages (src/index.js, test/, package.json)
 .claude/commands/pitch-today.md
 tests/
 ```

@@ -19,6 +19,7 @@
     <a href="/leads" {% if nav == 'leads' %}aria-current="page"{% endif %}>Leads <small>{{ counts.get('new', 0) + counts.get('drafted', 0) + counts.get('approved', 0) + counts.get('contacted', 0) + counts.get('replied', 0) }}</small></a>
     <a href="/replies" {% if nav == 'replies' %}aria-current="page"{% endif %}>Replies <small>{{ counts.get('replied', 0) }}</small></a>
     <a href="/deals" {% if nav == 'deals' %}aria-current="page"{% endif %}>Deals <small>{{ counts.get('won', 0) }}</small></a>
+    <a href="/demos" {% if nav == 'demos' %}aria-current="page"{% endif %}>Demos</a>
     <a href="/sent" {% if nav == 'sent' %}aria-current="page"{% endif %}>Sent <small>{{ sent_total }}</small></a>
     <a href="/leads?status=opted_out" {% if nav == 'optouts' %}aria-current="page"{% endif %}>Opt-outs <small>{{ counts.get('opted_out', 0) }}</small></a>
     <a href="/settings" {% if nav == 'settings' %}aria-current="page"{% endif %}>Settings</a>

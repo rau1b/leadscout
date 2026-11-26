@@ -1,0 +1,13 @@
+{
+  "name": "leadscout-preview",
+  "private": true,
+  "type": "module",
+  "description": "LeadScout preview host: a Cloudflare Worker serving demo pages. Deployed by `leadscout demos publish`.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "3.2.7",
+    "wrangler": "4.158.0"
+  }
+}

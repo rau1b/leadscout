@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Demos · LeadScout{% endblock %}
+{% block main %}
+<div class="head">
+  <h1>Demos</h1>
+  <span class="meta">Concept pages built with <code>leadscout demo &lt;id&gt;</code>. Each one comes down 30 days after it was built.</span>
+</div>
+
+{% if done %}<p class="note" role="status">{{ done }}</p>{% endif %}
+{% if error %}<p class="note" role="alert">{{ error }}</p>{% endif %}
+{% if queued %}<p class="note" role="status">{{ queued }} unsubscribe(s) from the preview host are waiting: the unsubscribe code on the Find &amp; qualify side (contract C4) isn't built yet. They'll be applied on the first sync after it is.</p>{% endif %}
+
+<div class="sendctl">
+  <form method="post" action="/demos/publish"><button class="btn"{% if publish_problem %} disabled aria-describedby="publish-why"{% endif %}>Publish</button></form>
+  <form method="post" action="/demos/sync"><button class="btn quiet"{% if sync_problem %} disabled aria-describedby="sync-why"{% endif %}>Sync now</button></form>
+  {% if publish_problem %}<span class="hint" id="publish-why">{{ publish_problem }}</span>
+  {% elif sync_problem %}<span class="hint" id="sync-why">{{ sync_problem }}</span>
+  {% else %}<span class="hint">Publish puts every live demo online and takes expired or opted-out ones down. Sync runs every hour on its own.</span>{% endif %}
+</div>
+
+{% if rows %}
+<div class="tablewrap"><table>
+  <thead><tr><th>Business</th><th class="hide-sm">Type</th><th>Built</th><th>Expires</th><th>Link</th><th class="num">Views</th><th class="hide-sm">First viewed</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="n"><a href="/leads/{{ r.business_id }}">{{ r.name }}</a>{% if r.area %} <span class="hint">{{ r.area }}</span>{% endif %}</td>
+    <td class="hide-sm">{{ r.template|nicecat }}</td>
+    <td>{{ r.built_at|day }}</td>
+    <td>{% if r.expired %}<span class="st st-lost">Expired</span>{% else %}{{ r.expires_at|day }}{% endif %}</td>
+    <td>{% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener noreferrer">Open</a>{% else %}<span class="hint">Not online</span>{% endif %}</td>
+    <td class="num">{{ r.view_count }}</td>
+    <td class="hide-sm">{{ r.first_viewed_at|day }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty"><strong>No demos yet.</strong>Build one from a lead with <code>leadscout demo &lt;business id&gt;</code>, check its banner, then publish it here.</p>
+{% endif %}
+{% endblock %}

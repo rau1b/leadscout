@@ -52,6 +52,8 @@ async def lifespan(_app):
     housekeeping()
     sending.note_cut_off_run(db.connect())
     searches.start_worker()  # runs area searches queued from the Find leads page
+    from leadscout.demos.preview import start_hourly_sync  # Show & close: hourly demo views/unsubscribes; idle until [preview] is set
+    start_hourly_sync()
     hourly = asyncio.create_task(_housekeeping_every_hour())  # so a dashboard left open for days still gets its daily jobs
     try:
         yield
@@ -456,3 +458,4 @@ def start_find(city: str = Form(""), neighbourhood: str = Form(""), types: list[
 # Routes for replies, deals and hiding live in extras.py.
 from leadscout.web import extras  # noqa: E402,F401
 from leadscout.web import settings_page  # noqa: E402,F401
+from leadscout.web import demos as demos_area  # noqa: E402,F401
